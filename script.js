@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', function() {
          return;
      }
 
-    // --- Listas de Configuração (Movidas de database.js para fácil acesso) ---
+    // --- Listas de Configuração ---
     const machineList = [
         "H-01", "H-02", "H-03", "H-04", "H-05", "H-06", "H-07", "H-08", "H-09", "H-10",
         "H-11", "H-12", "H-13", "H-14", "H-15", "H-16", "H-17", "H-18", "H-19", "H-20",
@@ -44,12 +44,12 @@ document.addEventListener('DOMContentLoaded', function() {
     ];
     
     // Variáveis Globais
-    let activeListenerUnsubscribe = null; // Unifica os listeners
+    let activeListenerUnsubscribe = null;
     let currentAnalysisView = 'resumo';
     let docIdToDelete = null;
     let collectionToDelete = null;
     let fullDashboardData = { perdas: [] };
-    let paretoChartInstance, productionTimelineChartInstance;
+    let paretoChartInstance, productionTimelineChartInstance, oeeByShiftChartInstance;
     let currentReportData = [];
 
     // Seletores de Elementos DOM
@@ -58,6 +58,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const pageTitle = document.getElementById('page-title');
     const confirmModal = document.getElementById('confirm-modal');
     
+    // Seletores do menu responsivo
+    const sidebar = document.getElementById('sidebar');
+    const sidebarOpenBtn = document.getElementById('sidebar-open-btn');
+    const sidebarCloseBtn = document.getElementById('sidebar-close-btn');
+    const sidebarOverlay = document.getElementById('sidebar-overlay');
+
     const planningDateSelector = document.getElementById('planning-date-selector');
     const planningForm = document.getElementById('planning-form');
     const planningTableBody = document.getElementById('planning-table-body');
@@ -74,7 +80,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const productionModalForm = document.getElementById('production-entry-form');
     const productionModalTitle = document.getElementById('production-modal-title');
 
-    // Seletores da nova aba de Parada de Máquina
     const downtimeForm = document.getElementById('downtime-form');
     const downtimeDate = document.getElementById('downtime-date');
     const downtimeMachineSelect = document.getElementById('downtime-machine');
@@ -94,6 +99,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const machineFilter = document.getElementById('machine-filter');
     const refreshDashboardBtn = document.getElementById('refresh-dashboard-btn');
     
+    // Seletores dos gráficos do dashboard
+    const chartToggleProdBtn = document.getElementById('chart-toggle-prod');
+    const chartToggleOeeBtn = document.getElementById('chart-toggle-oee');
+    const productionChartContainer = document.getElementById('production-chart-container');
+    const oeeChartContainer = document.getElementById('oee-chart-container');
+
+
     // --- INICIALIZAÇÃO ---
     function init() {
         setTodayDate();
@@ -142,6 +154,10 @@ document.addEventListener('DOMContentLoaded', function() {
         navButtons.forEach(button => button.addEventListener('click', handleNavClick));
         analysisTabButtons.forEach(button => button.addEventListener('click', handleAnalysisTabClick));
         
+        if (sidebarOpenBtn) sidebarOpenBtn.addEventListener('click', openSidebar);
+        if (sidebarCloseBtn) sidebarCloseBtn.addEventListener('click', closeSidebar);
+        if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebar);
+
         planningForm.addEventListener('submit', handlePlanningFormSubmit);
         planningDateSelector.addEventListener('change', (e) => listenToPlanningChanges(e.target.value));
         planningClientSelect.addEventListener('change', onPlanningClientChange);
@@ -170,6 +186,9 @@ document.addEventListener('DOMContentLoaded', function() {
         refreshDashboardBtn.addEventListener('click', loadDashboardData);
         machineFilter.addEventListener('change', () => processAndRenderDashboard(fullDashboardData));
         
+        chartToggleProdBtn.addEventListener('click', () => toggleDashboardChart('prod'));
+        chartToggleOeeBtn.addEventListener('click', () => toggleDashboardChart('oee'));
+
         if (confirmModal) {
             document.getElementById('confirm-modal-cancel-btn').addEventListener('click', hideConfirmModal);
             document.getElementById('confirm-modal-ok-btn').addEventListener('click', executeDelete);
@@ -198,7 +217,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         pageTitle.textContent = e.currentTarget.querySelector('span').textContent;
         
-        detachActiveListener(); // Garante que qualquer listener antigo seja removido ao trocar de aba
+        detachActiveListener();
 
         if (page === 'lancamento') listenToCurrentProductionPlan();
         if (page === 'planejamento') listenToPlanningChanges(planningDateSelector.value);
@@ -207,7 +226,26 @@ document.addEventListener('DOMContentLoaded', function() {
             updateDowntimeMachineList(downtimeDate.value);
         }
         if (page === 'analise') loadAnalysisData();
+
+        if (window.innerWidth < 768) {
+            closeSidebar();
+        }
     }
+    
+    function openSidebar() {
+        if (sidebar && sidebarOverlay) {
+            sidebar.classList.remove('-translate-x-full');
+            sidebarOverlay.classList.remove('hidden');
+        }
+    }
+
+    function closeSidebar() {
+        if (sidebar && sidebarOverlay) {
+            sidebar.classList.add('-translate-x-full');
+            sidebarOverlay.classList.add('hidden');
+        }
+    }
+
 
     function handleAnalysisTabClick(e) {
         const view = e.currentTarget.dataset.view;
@@ -451,9 +489,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                     </div>
                     <div class="grid grid-cols-3 gap-2 mt-4">
-                        <button data-id="${item.id}" data-turno="T1" class="setup-btn bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-3 rounded-lg text-sm">Setup T1</button>
-                        <button data-id="${item.id}" data-turno="T2" class="setup-btn bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-3 rounded-lg text-sm">Setup T2</button>
-                        <button data-id="${item.id}" data-turno="T3" class="setup-btn bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-3 rounded-lg text-sm">Setup T3</button>
+                        <button data-id="${item.id}" data-turno="T1" class="setup-btn bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-3 rounded-lg text-sm">1ºTurno</button>
+                        <button data-id="${item.id}" data-turno="T2" class="setup-btn bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-3 rounded-lg text-sm">2ºTurno</button>
+                        <button data-id="${item.id}" data-turno="T3" class="setup-btn bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-3 rounded-lg text-sm">3ºTurno</button>
                     </div>
                 </div>
             `;
@@ -509,7 +547,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('leader-entry-active-cavities').value = data[`active_cavities_${turno.toLowerCase()}`] || '';
             }
             
-            // Busca lançamento de produção existente
             const entriesRef = db.collection('production_entries');
             const q = entriesRef.where('planId', '==', docId).where('turno', '==', turno).limit(1);
             const querySnapshot = await q.get();
@@ -608,7 +645,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 launchedEntries = new Set();
                 snapshot.forEach(doc => {
                     const entry = doc.data();
-                    if(entry.produzido > 0 || entry.duracao_min > 0 || entry.refugo_kg > 0) {
+                    if(entry.produzido > 0 || entry.refugo_kg > 0) {
                         launchedEntries.add(`${entry.planId}-${entry.turno}`);
                     }
                 });
@@ -642,9 +679,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     <p class="text-sm text-slate-600">${item.product}</p>
                 </div>
                 <div class="grid grid-cols-3 gap-2 mt-4">
-                    <button data-id="${item.id}" data-turno="T1" class="launch-btn ${t1Class} text-white font-bold py-2 rounded-md">T1</button>
-                    <button data-id="${item.id}" data-turno="T2" class="launch-btn ${t2Class} text-white font-bold py-2 rounded-md">T2</button>
-                    <button data-id="${item.id}" data-turno="T3" class="launch-btn ${t3Class} text-white font-bold py-2 rounded-md">T3</button>
+                    <button data-id="${item.id}" data-turno="T1" class="launch-btn ${t1Class} text-white font-bold py-2 rounded-md">1º Turno</button>
+                    <button data-id="${item.id}" data-turno="T2" class="launch-btn ${t2Class} text-white font-bold py-2 rounded-md">2º Turno</button>
+                    <button data-id="${item.id}" data-turno="T3" class="launch-btn ${t3Class} text-white font-bold py-2 rounded-md">3º Turno</button>
                 </div>
             </div>
         `}).join('');
@@ -679,7 +716,6 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!querySnapshot.empty) {
                 const prodEntry = querySnapshot.docs[0].data();
                 document.getElementById('production-entry-produzido').value = prodEntry.produzido || 0;
-                document.getElementById('production-entry-parada').value = prodEntry.duracao_min || 0;
                 document.getElementById('production-entry-refugo').value = prodEntry.refugo_kg || 0;
                 document.getElementById('production-entry-borras').value = prodEntry.borras_kg || 0;
                 document.getElementById('production-entry-perdas').value = prodEntry.motivo_refugo || '';
@@ -711,7 +747,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const data = {
             produzido: parseInt(formData.get('produzido')) || 0,
-            duracao_min: parseInt(formData.get('duracao_min')) || 0,
+            duracao_min: 0,
             refugo_kg: parseFloat(formData.get('refugo')) || 0,
             borras_kg: parseFloat(formData.get('borras')) || 0,
             motivo_refugo: formData.get('perdas'),
@@ -815,7 +851,7 @@ document.addEventListener('DOMContentLoaded', function() {
             statusMessage.textContent = 'Parada registrada com sucesso!';
             statusMessage.className = 'text-green-600 text-sm font-semibold h-5 text-center';
             form.reset();
-            downtimeDate.value = getProductionDateString(); // Reseta para a data atual
+            downtimeDate.value = getProductionDateString();
         } catch (error) {
             console.error("Erro ao registrar parada: ", error);
             statusMessage.textContent = 'Erro ao registrar. Tente novamente.';
@@ -833,13 +869,16 @@ document.addEventListener('DOMContentLoaded', function() {
         showLoadingState('downtime-list', true);
 
         activeListenerUnsubscribe = db.collection('downtime_entries').where('date', '==', date)
-            .orderBy('createdAt', 'desc')
             .onSnapshot(snapshot => {
-                const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                items.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
                 renderDowntimeTable(items);
                 showLoadingState('downtime-list', false, items.length === 0);
             }, error => {
                 console.error("Erro ao carregar paradas: ", error);
+                if(downtimeTableContainer){
+                    downtimeTableContainer.innerHTML = `<div class="text-center text-red-600 p-4">Erro ao carregar paradas. Verifique a consola para mais detalhes.</div>`;
+                }
                 showLoadingState('downtime-list', false, true);
             });
     }
@@ -908,8 +947,11 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const productionSnapshot = await db.collection('production_entries').where('data', '==', date).get();
             const productions = productionSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            const downtimeSnapshot = await db.collection('downtime_entries').where('date', '==', date).get();
+            const downtimes = downtimeSnapshot.docs.map(doc => doc.data());
 
-            currentReportData = processResumoData(plans, productions);
+            currentReportData = processResumoData(plans, productions, downtimes);
             
             const currentView = reportQuantBtn.classList.contains('active') ? 'quant' : 'effic';
             switchReportView(currentView);
@@ -922,7 +964,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    function processResumoData(plans, productions) {
+    function processResumoData(plans, productions, downtimes) {
         return plans.map(plan => {
             const data = { ...plan, T1: {}, T2: {}, T3: {} };
             const turnos = ['T1', 'T2', 'T3'];
@@ -930,19 +972,26 @@ document.addEventListener('DOMContentLoaded', function() {
             turnos.forEach(turno => {
                 const entries = productions.filter(p => p.planId === plan.id && p.turno === turno);
                 const produzido = entries.reduce((sum, item) => sum + item.produzido, 0);
-                const paradas = entries.reduce((sum, item) => sum + item.duracao_min, 0);
+                
+                const machineDowntimes = downtimes.filter(d => d.machine === plan.machine);
+                const totalParadas = machineDowntimes.reduce((sum, item) => {
+                    const start = new Date(`${item.date}T${item.startTime}`);
+                    const end = new Date(`${item.date}T${item.endTime}`);
+                    return sum + (end > start ? Math.round((end - start) / 60000) : 0);
+                }, 0);
+
                 const refugo_kg = entries.reduce((sum, item) => sum + item.refugo_kg, 0);
                 const refugo_pcs = plan.piece_weight > 0 ? Math.round((refugo_kg * 1000) / plan.piece_weight) : 0;
                 
                 const ciclo_real = plan[`real_cycle_${turno.toLowerCase()}`] || plan.budgeted_cycle;
                 const cav_ativas = plan[`active_cavities_${turno.toLowerCase()}`] || plan.mold_cavities;
                 
-                const oee = calculateShiftOEE(produzido, paradas, refugo_pcs, ciclo_real, cav_ativas);
+                const oee = calculateShiftOEE(produzido, totalParadas / 3, refugo_pcs, ciclo_real, cav_ativas); // Divide parada por 3 turnos
 
-                data[turno] = { produzido, paradas, refugo_kg, refugo_pcs, ...oee };
+                data[turno] = { produzido, paradas: totalParadas, refugo_kg, refugo_pcs, ...oee };
             });
             
-            data.total_produzido = data.T1.produzido + data.T2.produzido + data.T3.produzido;
+            data.total_produzido = (data.T1.produzido || 0) + (data.T2.produzido || 0) + (data.T3.produzido || 0);
             return data;
         });
     }
@@ -954,7 +1003,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const tempoProduzindo = tempoProgramado - tempoParadaMin;
         const disponibilidade = tempoProgramado > 0 ? (tempoProduzindo / tempoProgramado) : 0;
 
-        const producaoTeorica = cicloReal > 0 ? (tempoProduzindo * 60 / cicloReal) * cavAtivas : 0;
+        const producaoTeorica = cicloReal > 0 && cavAtivas > 0 ? (tempoProduzindo * 60 / cicloReal) * cavAtivas : 0;
         const performance = producaoTeorica > 0 ? (produzido / producaoTeorica) : 0;
         
         const totalProduzido = produzido + refugoPcs;
@@ -963,10 +1012,10 @@ document.addEventListener('DOMContentLoaded', function() {
         const oee = disponibilidade * performance * qualidade;
         
         return {
-            disponibilidade: isNaN(disponibilidade) ? 0 : disponibilidade,
-            performance: isNaN(performance) ? 0 : performance,
-            qualidade: isNaN(qualidade) ? 0 : qualidade,
-            oee: isNaN(oee) ? 0 : oee
+            disponibilidade: isNaN(disponibilidade) || !isFinite(disponibilidade) ? 0 : disponibilidade,
+            performance: isNaN(performance) || !isFinite(performance) ? 0 : performance,
+            qualidade: isNaN(qualidade) || !isFinite(qualidade) ? 0 : qualidade,
+            oee: isNaN(oee) || !isFinite(oee) ? 0 : oee
         };
     }
 
@@ -1005,6 +1054,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <th colspan="2" class="px-2 py-2 text-center text-xs font-medium uppercase border-l">Turno 3</th>
                         <th rowspan="2" class="px-2 py-2 text-center text-xs font-medium uppercase border-l align-middle">Qtd. Planejada</th>
                         <th rowspan="2" class="px-2 py-2 text-center text-xs font-medium uppercase border-l align-middle">Total Dia</th>
+                        <th rowspan="2" class="px-2 py-2 text-center text-xs font-medium uppercase border-l align-middle">Prod. Faltante</th>
                         <th rowspan="2" class="px-2 py-2 text-center text-xs font-medium uppercase border-l align-middle no-print">Ação</th>
                     </tr>
                     <tr>
@@ -1014,19 +1064,22 @@ document.addEventListener('DOMContentLoaded', function() {
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-200">
-                    ${data.map(item => `
+                    ${data.map(item => {
+                        const faltante = (item.planned_quantity || 0) - item.total_produzido;
+                        return `
                         <tr>
                             <td class="px-2 py-2 whitespace-nowrap">${item.machine}</td><td class="px-2 py-2 whitespace-nowrap">${item.product}</td>
-                            <td class="px-2 py-2 text-center">${item.T1.produzido.toLocaleString('pt-BR')}</td><td class="px-2 py-2 text-center">${item.T1.refugo_kg.toFixed(2)}</td>
-                            <td class="px-2 py-2 text-center border-l">${item.T2.produzido.toLocaleString('pt-BR')}</td><td class="px-2 py-2 text-center">${item.T2.refugo_kg.toFixed(2)}</td>
-                            <td class="px-2 py-2 text-center border-l">${item.T3.produzido.toLocaleString('pt-BR')}</td><td class="px-2 py-2 text-center">${item.T3.refugo_kg.toFixed(2)}</td>
+                            <td class="px-2 py-2 text-center">${(item.T1.produzido || 0).toLocaleString('pt-BR')}</td><td class="px-2 py-2 text-center">${(item.T1.refugo_kg || 0).toFixed(2)}</td>
+                            <td class="px-2 py-2 text-center border-l">${(item.T2.produzido || 0).toLocaleString('pt-BR')}</td><td class="px-2 py-2 text-center">${(item.T2.refugo_kg || 0).toFixed(2)}</td>
+                            <td class="px-2 py-2 text-center border-l">${(item.T3.produzido || 0).toLocaleString('pt-BR')}</td><td class="px-2 py-2 text-center">${(item.T3.refugo_kg || 0).toFixed(2)}</td>
                             <td class="px-2 py-2 text-center border-l">${(item.planned_quantity || 0).toLocaleString('pt-BR')}</td>
                             <td class="px-2 py-2 text-center font-bold border-l">${item.total_produzido.toLocaleString('pt-BR')}</td>
+                            <td class="px-2 py-2 text-center font-bold border-l ${faltante > 0 ? 'text-red-600' : 'text-green-600'}">${faltante.toLocaleString('pt-BR')}</td>
                             <td class="px-2 py-2 text-center border-l no-print">
                                 <button data-id="${item.id}" class="delete-resumo-btn text-red-500 hover:text-red-700 p-1"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                             </td>
                         </tr>
-                    `).join('')}
+                    `}).join('')}
                 </tbody>
             </table>`;
         resumoContentContainer.innerHTML = tableHTML;
@@ -1079,6 +1132,14 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // --- ABA DE ANÁLISE: DASHBOARD ---
+    
+    function toggleDashboardChart(view) {
+        chartToggleProdBtn.classList.toggle('active', view === 'prod');
+        chartToggleOeeBtn.classList.toggle('active', view === 'oee');
+        productionChartContainer.classList.toggle('hidden', view !== 'prod');
+        oeeChartContainer.classList.toggle('hidden', view !== 'oee');
+    }
+    
     async function loadDashboardData() {
         const startDate = startDateSelector.value;
         const endDate = endDateSelector.value;
@@ -1092,10 +1153,7 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('dashboard-content').style.display = 'none';
 
         try {
-            const prodSnapshot = await db.collection('production_entries')
-                .where('data', '>=', startDate)
-                .where('data', '<=', endDate)
-                .get();
+            const prodSnapshot = await db.collection('production_entries').where('data', '>=', startDate).where('data', '<=', endDate).get();
             const productions = prodSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
             if (productions.length === 0) {
@@ -1103,7 +1161,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 populateMachineFilter([]);
                 processAndRenderDashboard(fullDashboardData);
                 document.getElementById('dashboard-content').style.display = 'block';
-                showLoadingState('dashboard', false, false); // Mostra o painel, mas os gráficos estarão vazios
+                showLoadingState('dashboard', false, false);
                 return;
             }
 
@@ -1120,13 +1178,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
             
-            // CORREÇÃO: Filtra lançamentos que não têm um plano correspondente (evita erros)
-            const combinedData = productions
-                .filter(prod => plans[prod.planId]) 
-                .map(prod => {
-                    const plan = plans[prod.planId];
-                    return { ...prod, ...plan };
-                });
+            const combinedData = productions.filter(prod => plans[prod.planId]).map(prod => ({ ...prod, ...plans[prod.planId] }));
 
             fullDashboardData = { perdas: combinedData };
             
@@ -1144,13 +1196,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function processAndRenderDashboard({ perdas }) {
         const selectedMachine = machineFilter.value;
-        const filteredData = selectedMachine === 'total'
-            ? perdas
-            : perdas.filter(p => p.machine === selectedMachine);
+        const filteredData = selectedMachine === 'total' ? perdas : perdas.filter(p => p.machine === selectedMachine);
         
         const kpis = calculateDashboardOEE(filteredData);
         updateKpiCards(kpis);
         renderProductionTimelineChart(filteredData, selectedMachine);
+        renderOeeByShiftChart(filteredData, selectedMachine);
         renderParetoChart(filteredData);
     }
     
@@ -1220,41 +1271,113 @@ document.addEventListener('DOMContentLoaded', function() {
         ctx.canvas.style.display = 'block';
         messageDiv.style.display = 'none';
         
-        const hourlyProduction = {};
-        for (let i = 7; i < 24; i++) { hourlyProduction[`${String(i).padStart(2,'0')}:00`] = { T1: 0, T2: 0, T3: 0 }; }
-        for (let i = 0; i < 7; i++) { hourlyProduction[`${String(i).padStart(2,'0')}:00`] = { T1: 0, T2: 0, T3: 0 }; }
+        const hourlyData = {};
+        for (let i = 7; i < 24; i++) { hourlyData[`${String(i).padStart(2,'0')}:00`] = 0; }
+        for (let i = 0; i < 7; i++) { hourlyData[`${String(i).padStart(2,'0')}:00`] = 0; }
 
         data.forEach(item => {
-            const ts = item.timestamp?.toDate() || new Date();
+            const ts = item.timestamp?.toDate();
+            if (!ts) return;
             const hour = `${String(ts.getHours()).padStart(2,'0')}:00`;
-            if (hourlyProduction[hour]) {
-               hourlyProduction[hour][item.turno] += item.produzido;
+            if (hourlyData[hour] !== undefined) {
+               hourlyData[hour] += item.produzido;
             }
         });
 
-        const sortedHours = Object.keys(hourlyProduction).sort((a,b) => {
+        const sortedHours = Object.keys(hourlyData).sort((a,b) => {
             const hourA = parseInt(a.split(':')[0]);
             const hourB = parseInt(b.split(':')[0]);
             if (hourA >= 7 && hourB < 7) return -1;
             if (hourA < 7 && hourB >= 7) return 1;
             return hourA - hourB;
         });
+        
+        let cumulativeTotal = 0;
+        const cumulativeProductionData = sortedHours.map(hour => {
+            cumulativeTotal += hourlyData[hour];
+            return cumulativeTotal;
+        });
+
+        const planItem = data.length > 0 ? data.find(d => d.planned_quantity > 0) : null;
+        const metaDiaria = planItem ? planItem.planned_quantity : 0;
+        const metaPorHora = metaDiaria / 24;
+        
+        let cumulativeTarget = 0;
+        const cumulativeTargetData = sortedHours.map(() => {
+            cumulativeTarget += metaPorHora;
+            return cumulativeTarget;
+        });
 
         productionTimelineChartInstance = new Chart(ctx, {
-            type: 'bar',
+            type: 'line',
             data: {
                 labels: sortedHours,
                 datasets: [
-                    { label: 'Turno 1', data: sortedHours.map(h => hourlyProduction[h].T1), backgroundColor: 'rgba(8, 145, 178, 0.7)' },
-                    { label: 'Turno 2', data: sortedHours.map(h => hourlyProduction[h].T2), backgroundColor: 'rgba(56, 189, 248, 0.7)' },
-                    { label: 'Turno 3', data: sortedHours.map(h => hourlyProduction[h].T3), backgroundColor: 'rgba(14, 116, 144, 0.7)' }
+                    { 
+                        label: 'Produção Acumulada', 
+                        data: cumulativeProductionData, 
+                        borderColor: 'rgba(8, 145, 178, 1)',
+                        backgroundColor: 'rgba(8, 145, 178, 0.1)',
+                        fill: true,
+                        tension: 0.3
+                    },
+                    {
+                        label: 'Meta Acumulada',
+                        data: cumulativeTargetData,
+                        borderColor: 'rgba(239, 68, 68, 1)',
+                        borderDash: [5, 5],
+                        fill: false,
+                        pointRadius: 0
+                    }
                 ]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } },
-                plugins: { legend: { position: 'top' } }
+                scales: { y: { beginAtZero: true, title: { display: true, text: 'Quantidade de Peças' } } },
+                plugins: { 
+                    legend: { position: 'top' },
+                    tooltip: { mode: 'index', intersect: false }
+                },
+                hover: { mode: 'index', intersect: false }
+            }
+        });
+    }
+
+    function renderOeeByShiftChart(data, selectedMachine) {
+        const ctx = document.getElementById('oeeByShiftChart').getContext('2d');
+        if (oeeByShiftChartInstance) oeeByShiftChartInstance.destroy();
+        
+        if (selectedMachine === 'total') {
+            return;
+        }
+        
+        const oeeData = { T1: [], T2: [], T3: [] };
+        data.forEach(item => {
+            const refugoPcs = item.piece_weight > 0 ? (item.refugo_kg * 1000) / item.piece_weight : 0;
+            const oee = calculateShiftOEE(item.produzido, item.duracao_min, refugoPcs, item[`real_cycle_${item.turno.toLowerCase()}`] || item.budgeted_cycle, item[`active_cavities_${item.turno.toLowerCase()}`] || item.mold_cavities);
+            if (oeeData[item.turno]) {
+                oeeData[item.turno].push(oee.oee);
+            }
+        });
+
+        const avgOee = (arr) => arr.length > 0 ? (arr.reduce((a, b) => a + b, 0) / arr.length) * 100 : 0;
+
+        oeeByShiftChartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['Turno 1', 'Turno 2', 'Turno 3'],
+                datasets: [{
+                    label: 'Eficiência (OEE)',
+                    data: [avgOee(oeeData.T1), avgOee(oeeData.T2), avgOee(oeeData.T3)],
+                    backgroundColor: ['rgba(8, 145, 178, 0.7)', 'rgba(56, 189, 248, 0.7)', 'rgba(14, 116, 144, 0.7)']
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: { y: { beginAtZero: true, max: 100, ticks: { callback: value => value + '%' } } },
+                plugins: { legend: { display: false } }
             }
         });
     }
@@ -1350,7 +1473,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (panel.includes('dashboard') || panel.includes('resumo') || panel.includes('list')) {
                         contentEl.style.display = 'block';
                     } else {
-                        contentEl.style.display = 'grid'; // Para painéis do líder e operador
+                        contentEl.style.display = 'grid';
                     }
                 }
             }
