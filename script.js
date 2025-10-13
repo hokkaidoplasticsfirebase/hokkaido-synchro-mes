@@ -58,7 +58,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const pageTitle = document.getElementById('page-title');
     const confirmModal = document.getElementById('confirm-modal');
     
-    // Seletores do menu responsivo
     const sidebar = document.getElementById('sidebar');
     const sidebarOpenBtn = document.getElementById('sidebar-open-btn');
     const sidebarCloseBtn = document.getElementById('sidebar-close-btn');
@@ -99,11 +98,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const machineFilter = document.getElementById('machine-filter');
     const refreshDashboardBtn = document.getElementById('refresh-dashboard-btn');
     
-    // Seletores dos gráficos do dashboard
     const chartToggleProdBtn = document.getElementById('chart-toggle-prod');
     const chartToggleOeeBtn = document.getElementById('chart-toggle-oee');
     const productionChartContainer = document.getElementById('production-chart-container');
     const oeeChartContainer = document.getElementById('oee-chart-container');
+    const graphMachineFilter = document.getElementById('graph-machine-filter');
 
 
     // --- INICIALIZAÇÃO ---
@@ -142,12 +141,9 @@ document.addEventListener('DOMContentLoaded', function() {
         downtimeDate.value = todayString;
         downtimeListDate.value = todayString;
         
-        const endDate = new Date();
-        const startDate = new Date();
-        startDate.setDate(endDate.getDate() - 6);
-        
-        startDateSelector.value = startDate.toISOString().split('T')[0];
-        endDateSelector.value = endDate.toISOString().split('T')[0];
+        // Define a data inicial e final do dashboard para o dia de hoje por padrão
+        startDateSelector.value = todayString;
+        endDateSelector.value = todayString;
     }
 
     function setupEventListeners() {
@@ -185,7 +181,8 @@ document.addEventListener('DOMContentLoaded', function() {
         
         refreshDashboardBtn.addEventListener('click', loadDashboardData);
         machineFilter.addEventListener('change', () => processAndRenderDashboard(fullDashboardData));
-        
+        graphMachineFilter.addEventListener('change', () => processAndRenderDashboard(fullDashboardData));
+
         chartToggleProdBtn.addEventListener('click', () => toggleDashboardChart('prod'));
         chartToggleOeeBtn.addEventListener('click', () => toggleDashboardChart('oee'));
 
@@ -307,7 +304,7 @@ document.addEventListener('DOMContentLoaded', function() {
             await db.collection('planning').add(docData);
             
             statusMessage.textContent = 'Item adicionado com sucesso!';
-            statusMessage.className = 'text-green-600 text-sm font-semibold h-5 text-center';
+            statusMessage.className = 'text-status-success text-sm font-semibold h-5 text-center';
             form.reset();
             planningProductSelect.innerHTML = '<option value="">Selecione um cliente</option>';
             planningProductSelect.disabled = true;
@@ -317,7 +314,7 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch (error) {
             console.error("Erro ao adicionar planejamento: ", error);
             statusMessage.textContent = 'Erro ao adicionar. Tente novamente.';
-            statusMessage.className = 'text-red-600 text-sm font-semibold h-5 text-center';
+            statusMessage.className = 'text-status-error text-sm font-semibold h-5 text-center';
         } finally {
             submitButton.disabled = false;
             submitButton.innerHTML = `<i data-lucide="plus-circle"></i><span>Adicionar ao Plano</span>`;
@@ -425,11 +422,11 @@ document.addEventListener('DOMContentLoaded', function() {
         const orDashNum = (value) => value ? value.toLocaleString('pt-BR') : '-';
         const cycleClass = (realCycle, budgetedCycle) => {
             if (!realCycle || !budgetedCycle) return '';
-            return realCycle > budgetedCycle ? 'text-red-600 font-bold' : '';
+            return realCycle > budgetedCycle ? 'text-status-error font-bold' : '';
         };
 
         planningTableBody.innerHTML = items.map(item => `
-            <tr class="hover:bg-slate-50 text-center text-sm">
+            <tr class="hover:bg-gray-50 text-center text-sm">
                 <td class="px-2 py-2 whitespace-nowrap border text-left">${item.machine}</td>
                 <td class="px-2 py-2 whitespace-nowrap border text-left">${item.product}</td>
                 <td class="px-2 py-2 whitespace-nowrap border">${orDash(item.budgeted_cycle)}</td>
@@ -451,7 +448,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <td class="px-2 py-2 whitespace-nowrap border font-bold">${orDashNum(item.total_produzido)}</td>
                 <td class="px-2 py-2 whitespace-nowrap border">${item.machine}</td>
                 <td class="px-2 py-2 whitespace-nowrap border no-print">
-                    <button data-id="${item.id}" class="delete-plan-btn text-red-500 hover:text-red-700 p-1 mx-auto flex"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                    <button data-id="${item.id}" class="delete-plan-btn text-status-error hover:text-red-700 p-1 mx-auto flex"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                 </td>
             </tr>
         `).join('');
@@ -474,24 +471,29 @@ document.addEventListener('DOMContentLoaded', function() {
             const turnos = ['T1', 'T2', 'T3'];
             const statusHtml = turnos.map(turno => {
                 const isComplete = item[`real_cycle_${turno.toLowerCase()}`] && item[`active_cavities_${turno.toLowerCase()}`];
-                const statusClass = isComplete ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700';
+                const statusClass = isComplete ? 'bg-green-100 text-status-success' : 'bg-yellow-100 text-status-warning';
                 const statusIcon = isComplete ? `<i data-lucide="check-circle-2" class="w-4 h-4"></i>` : `<i data-lucide="alert-circle" class="w-4 h-4"></i>`;
                 return `<div class="flex items-center justify-center gap-2 p-1 rounded-md text-xs font-semibold ${statusClass}">${statusIcon} ${turno}</div>`;
             }).join('');
+            
+            const btnClasses = turnos.map(turno => {
+                 const isComplete = item[`real_cycle_${turno.toLowerCase()}`] && item[`active_cavities_${turno.toLowerCase()}`];
+                 return isComplete ? 'bg-status-success hover:bg-green-700' : 'bg-gray-500 hover:bg-gray-600';
+            });
 
             return `
                 <div class="border rounded-lg p-4 shadow-md flex flex-col justify-between bg-white">
                     <div>
                         <h3 class="font-bold text-lg">${item.machine}</h3>
-                        <p class="text-sm text-slate-600">${item.product}</p>
+                        <p class="text-sm text-gray-600">${item.product}</p>
                         <div class="grid grid-cols-3 gap-2 mt-2">
                            ${statusHtml}
                         </div>
                     </div>
                     <div class="grid grid-cols-3 gap-2 mt-4">
-                        <button data-id="${item.id}" data-turno="T1" class="setup-btn bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-3 rounded-lg text-sm">1ºTurno</button>
-                        <button data-id="${item.id}" data-turno="T2" class="setup-btn bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-3 rounded-lg text-sm">2ºTurno</button>
-                        <button data-id="${item.id}" data-turno="T3" class="setup-btn bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-3 rounded-lg text-sm">3ºTurno</button>
+                        <button data-id="${item.id}" data-turno="T1" class="setup-btn ${btnClasses[0]} text-white font-bold py-2 px-3 rounded-lg text-sm">Setup T1</button>
+                        <button data-id="${item.id}" data-turno="T2" class="setup-btn ${btnClasses[1]} text-white font-bold py-2 px-3 rounded-lg text-sm">Setup T2</button>
+                        <button data-id="${item.id}" data-turno="T3" class="setup-btn ${btnClasses[2]} text-white font-bold py-2 px-3 rounded-lg text-sm">Setup T3</button>
                     </div>
                 </div>
             `;
@@ -516,19 +518,19 @@ document.addEventListener('DOMContentLoaded', function() {
             <input type="hidden" id="leader-entry-turno" name="turno">
             <div>
                 <label for="leader-entry-real-cycle" class="block text-sm font-medium">Ciclo Real (${turno})</label>
-                <input type="number" id="leader-entry-real-cycle" name="real_cycle" step="0.1" class="mt-1 w-full p-2 border-slate-300 rounded-md">
+                <input type="number" id="leader-entry-real-cycle" name="real_cycle" step="0.1" class="mt-1 w-full p-2 border-gray-300 rounded-md">
             </div>
             <div>
                 <label for="leader-entry-active-cavities" class="block text-sm font-medium">Cavidades Ativas (${turno})</label>
-                <input type="number" id="leader-entry-active-cavities" name="active_cavities" step="1" class="mt-1 w-full p-2 border-slate-300 rounded-md">
+                <input type="number" id="leader-entry-active-cavities" name="active_cavities" step="1" class="mt-1 w-full p-2 border-gray-300 rounded-md">
             </div>
             <div>
                 <label for="leader-entry-produzido" class="block text-sm font-medium">Produção Boa (peças)</label>
-                <input type="number" id="leader-entry-produzido" name="produzido" min="0" class="mt-1 w-full p-2 border-slate-300 rounded-md">
+                <input type="number" id="leader-entry-produzido" name="produzido" min="0" class="mt-1 w-full p-2 border-gray-300 rounded-md">
             </div>
             <div class="mt-6 flex justify-end gap-3 pt-4 border-t">
-                <button type="button" id="leader-modal-cancel-btn" class="bg-slate-200 hover:bg-slate-300 font-bold py-2 px-6 rounded-lg">Cancelar</button>
-                <button type="submit" class="bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-6 rounded-lg">Salvar</button>
+                <button type="button" id="leader-modal-cancel-btn" class="bg-gray-200 hover:bg-gray-300 font-bold py-2 px-6 rounded-lg">Cancelar</button>
+                <button type="submit" class="bg-primary-blue hover:bg-blue-800 text-white font-bold py-2 px-6 rounded-lg">Salvar</button>
             </div>`;
         
         leaderModal.querySelector('#leader-modal-cancel-btn').addEventListener('click', hideLeaderModal);
@@ -668,20 +670,20 @@ document.addEventListener('DOMContentLoaded', function() {
             const t2Launched = launchedEntries.has(`${item.id}-T2`);
             const t3Launched = launchedEntries.has(`${item.id}-T3`);
 
-            const t1Class = t1Launched ? 'bg-green-600 hover:bg-green-700' : 'bg-cyan-600 hover:bg-cyan-700';
-            const t2Class = t2Launched ? 'bg-green-600 hover:bg-green-700' : 'bg-cyan-600 hover:bg-cyan-700';
-            const t3Class = t3Launched ? 'bg-green-600 hover:bg-green-700' : 'bg-cyan-600 hover:bg-cyan-700';
+            const t1Class = t1Launched ? 'bg-status-success hover:bg-green-700' : 'bg-gray-500 hover:bg-gray-600';
+            const t2Class = t2Launched ? 'bg-status-success hover:bg-green-700' : 'bg-gray-500 hover:bg-gray-600';
+            const t3Class = t3Launched ? 'bg-status-success hover:bg-green-700' : 'bg-gray-500 hover:bg-gray-600';
 
             return `
-            <div class="bg-slate-50 border rounded-lg p-4 shadow-sm flex flex-col justify-between">
+            <div class="bg-gray-50 border rounded-lg p-4 shadow-sm flex flex-col justify-between">
                 <div>
                     <h3 class="font-bold text-lg">${item.machine}</h3>
-                    <p class="text-sm text-slate-600">${item.product}</p>
+                    <p class="text-sm text-gray-600">${item.product}</p>
                 </div>
                 <div class="grid grid-cols-3 gap-2 mt-4">
-                    <button data-id="${item.id}" data-turno="T1" class="launch-btn ${t1Class} text-white font-bold py-2 rounded-md">1º Turno</button>
-                    <button data-id="${item.id}" data-turno="T2" class="launch-btn ${t2Class} text-white font-bold py-2 rounded-md">2º Turno</button>
-                    <button data-id="${item.id}" data-turno="T3" class="launch-btn ${t3Class} text-white font-bold py-2 rounded-md">3º Turno</button>
+                    <button data-id="${item.id}" data-turno="T1" class="launch-btn ${t1Class} text-white font-bold py-2 rounded-md">Turno 1</button>
+                    <button data-id="${item.id}" data-turno="T2" class="launch-btn ${t2Class} text-white font-bold py-2 rounded-md">Turno 2</button>
+                    <button data-id="${item.id}" data-turno="T3" class="launch-btn ${t3Class} text-white font-bold py-2 rounded-md">Turno 3</button>
                 </div>
             </div>
         `}).join('');
@@ -885,8 +887,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function renderDowntimeTable(items) {
         const tableHTML = `
-            <table class="min-w-full divide-y divide-slate-200">
-                <thead class="bg-slate-50">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
                     <tr>
                         <th class="px-4 py-3 text-left text-xs font-medium uppercase">Máquina</th>
                         <th class="px-4 py-3 text-left text-xs font-medium uppercase">Início</th>
@@ -896,20 +898,20 @@ document.addEventListener('DOMContentLoaded', function() {
                         <th class="px-4 py-3 text-center text-xs font-medium uppercase">Ação</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-200">
+                <tbody class="divide-y divide-gray-200">
                     ${items.map(item => {
                         const start = new Date(`${item.date}T${item.startTime}`);
                         const end = new Date(`${item.date}T${item.endTime}`);
                         const duration = end > start ? Math.round((end - start) / 60000) : 0;
                         return `
-                            <tr class="hover:bg-slate-50">
+                            <tr class="hover:bg-gray-50">
                                 <td class="px-4 py-3 whitespace-nowrap">${item.machine}</td>
                                 <td class="px-4 py-3 whitespace-nowrap">${item.startTime}</td>
                                 <td class="px-4 py-3 whitespace-nowrap">${item.endTime}</td>
                                 <td class="px-4 py-3 whitespace-nowrap">${duration} min</td>
                                 <td class="px-4 py-3 whitespace-nowrap">${item.reason}</td>
                                 <td class="px-4 py-3 text-center">
-                                    <button data-id="${item.id}" class="delete-downtime-btn text-red-500 hover:text-red-700 p-1"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                    <button data-id="${item.id}" class="delete-downtime-btn text-status-error hover:text-red-700 p-1"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                                 </td>
                             </tr>
                         `;
@@ -1044,8 +1046,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 <h1 class="text-xl font-bold">Hokkaido Synchro - Relatório de Produção</h1>
                 <p>Data: ${new Date(resumoDateSelector.value.replace(/-/g, '/')).toLocaleDateString('pt-BR')}</p>
             </div>
-            <table class="min-w-full divide-y divide-slate-200">
-                <thead class="bg-slate-50">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
                     <tr>
                         <th rowspan="2" class="px-2 py-2 text-left text-xs font-medium uppercase align-middle">Máquina</th>
                         <th rowspan="2" class="px-2 py-2 text-left text-xs font-medium uppercase align-middle">Produto</th>
@@ -1063,7 +1065,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <th class="px-2 py-2 text-center text-xs font-medium uppercase border-l">Prod.</th><th class="px-2 py-2 text-center text-xs font-medium uppercase">Refugo (kg)</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-200">
+                <tbody class="divide-y divide-gray-200">
                     ${data.map(item => {
                         const faltante = (item.planned_quantity || 0) - item.total_produzido;
                         return `
@@ -1074,9 +1076,9 @@ document.addEventListener('DOMContentLoaded', function() {
                             <td class="px-2 py-2 text-center border-l">${(item.T3.produzido || 0).toLocaleString('pt-BR')}</td><td class="px-2 py-2 text-center">${(item.T3.refugo_kg || 0).toFixed(2)}</td>
                             <td class="px-2 py-2 text-center border-l">${(item.planned_quantity || 0).toLocaleString('pt-BR')}</td>
                             <td class="px-2 py-2 text-center font-bold border-l">${item.total_produzido.toLocaleString('pt-BR')}</td>
-                            <td class="px-2 py-2 text-center font-bold border-l ${faltante > 0 ? 'text-red-600' : 'text-green-600'}">${faltante.toLocaleString('pt-BR')}</td>
+                            <td class="px-2 py-2 text-center font-bold border-l ${faltante > 0 ? 'text-status-error' : 'text-status-success'}">${faltante.toLocaleString('pt-BR')}</td>
                             <td class="px-2 py-2 text-center border-l no-print">
-                                <button data-id="${item.id}" class="delete-resumo-btn text-red-500 hover:text-red-700 p-1"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                <button data-id="${item.id}" class="delete-resumo-btn text-status-error hover:text-red-700 p-1"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                             </td>
                         </tr>
                     `}).join('')}
@@ -1087,15 +1089,15 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function renderRelatorioEficiencia(data) {
-        const formatPercent = (val) => `<span class="${val < 0.7 ? 'text-red-600' : val < 0.85 ? 'text-yellow-600' : 'text-green-600'}">${(val * 100).toFixed(1)}%</span>`;
+        const formatPercent = (val) => `<span class="${val < 0.7 ? 'text-status-error' : val < 0.85 ? 'text-status-warning' : 'text-status-success'}">${(val * 100).toFixed(1)}%</span>`;
         const tableHTML = `
              <h3 class="text-lg font-bold mb-4 no-print">Relatório de Eficiência - ${resumoDateSelector.value}</h3>
              <div class="print-header hidden">
                 <h1 class="text-xl font-bold">Hokkaido Synchro - Relatório de Eficiência</h1>
                 <p>Data: ${new Date(resumoDateSelector.value.replace(/-/g, '/')).toLocaleDateString('pt-BR')}</p>
             </div>
-            <table class="min-w-full divide-y divide-slate-200">
-                <thead class="bg-slate-50">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
                     <tr>
                         <th rowspan="2" class="px-2 py-2 text-left text-xs font-medium uppercase align-middle">Máquina</th><th rowspan="2" class="px-2 py-2 text-left text-xs font-medium uppercase align-middle">Produto</th>
                         <th colspan="4" class="px-2 py-2 text-center text-xs font-medium uppercase">Turno 1</th>
@@ -1109,7 +1111,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <th class="px-2 py-2 text-center text-xs font-medium uppercase border-l">Disp.</th><th class="px-2 py-2 text-center text-xs font-medium uppercase">Perf.</th><th class="px-2 py-2 text-center text-xs font-medium uppercase">Qual.</th><th class="px-2 py-2 text-center text-xs font-medium uppercase font-bold">OEE</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-200">
+                <tbody class="divide-y divide-gray-200">
                     ${data.map(item => `
                         <tr>
                             <td class="px-2 py-2 whitespace-nowrap">${item.machine}</td><td class="px-2 py-2 whitespace-nowrap">${item.product}</td>
@@ -1117,7 +1119,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <td class="px-2 py-2 text-center border-l">${formatPercent(item.T2.disponibilidade)}</td><td class="px-2 py-2 text-center">${formatPercent(item.T2.performance)}</td><td class="px-2 py-2 text-center">${formatPercent(item.T2.qualidade)}</td><td class="px-2 py-2 text-center font-bold">${formatPercent(item.T2.oee)}</td>
                             <td class="px-2 py-2 text-center border-l">${formatPercent(item.T3.disponibilidade)}</td><td class="px-2 py-2 text-center">${formatPercent(item.T3.performance)}</td><td class="px-2 py-2 text-center">${formatPercent(item.T3.qualidade)}</td><td class="px-2 py-2 text-center font-bold">${formatPercent(item.T3.oee)}</td>
                             <td class="px-2 py-2 text-center border-l no-print">
-                                <button data-id="${item.id}" class="delete-resumo-btn text-red-500 hover:text-red-700 p-1"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                <button data-id="${item.id}" class="delete-resumo-btn text-status-error hover:text-red-700 p-1"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                             </td>
                         </tr>
                     `).join('')}
@@ -1183,6 +1185,9 @@ document.addEventListener('DOMContentLoaded', function() {
             fullDashboardData = { perdas: combinedData };
             
             populateMachineFilter(combinedData);
+            if (graphMachineFilter.options.length > 1) {
+                graphMachineFilter.value = graphMachineFilter.options[1].value;
+            }
             processAndRenderDashboard(fullDashboardData);
             
             document.getElementById('dashboard-content').style.display = 'block';
@@ -1195,14 +1200,25 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function processAndRenderDashboard({ perdas }) {
-        const selectedMachine = machineFilter.value;
-        const filteredData = selectedMachine === 'total' ? perdas : perdas.filter(p => p.machine === selectedMachine);
+        const mainFilterMachine = machineFilter.value;
+        const graphFilterMachine = graphMachineFilter.value;
+
+        const filteredDataForKpis = mainFilterMachine === 'total' ? perdas : perdas.filter(p => p.machine === mainFilterMachine);
+        const filteredDataForGraphs = graphFilterMachine ? perdas.filter(p => p.machine === graphFilterMachine && p.data >= startDateSelector.value && p.data <= endDateSelector.value) : [];
         
-        const kpis = calculateDashboardOEE(filteredData);
+        const kpis = calculateDashboardOEE(filteredDataForKpis);
         updateKpiCards(kpis);
-        renderProductionTimelineChart(filteredData, selectedMachine);
-        renderOeeByShiftChart(filteredData, selectedMachine);
-        renderParetoChart(filteredData);
+        
+        if (graphFilterMachine) {
+            renderProductionTimelineChart(filteredDataForGraphs, graphFilterMachine);
+            renderOeeByShiftChart(filteredDataForGraphs, graphFilterMachine);
+        } else {
+             if (productionTimelineChartInstance) productionTimelineChartInstance.destroy();
+             if (oeeByShiftChartInstance) oeeByShiftChartInstance.destroy();
+             document.getElementById('timeline-chart-message').style.display = 'flex';
+        }
+
+        renderParetoChart(filteredDataForKpis);
     }
     
     function calculateDashboardOEE(data) {
@@ -1263,7 +1279,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         if (productionTimelineChartInstance) productionTimelineChartInstance.destroy();
         
-        if (selectedMachine === 'total') {
+        if (!selectedMachine || selectedMachine === 'total') {
             ctx.canvas.style.display = 'none';
             messageDiv.style.display = 'flex';
             return;
@@ -1307,24 +1323,49 @@ document.addEventListener('DOMContentLoaded', function() {
             cumulativeTarget += metaPorHora;
             return cumulativeTarget;
         });
+        
+        let displayLabels = sortedHours;
+        let displayProdData = cumulativeProductionData;
+        let displayTargetData = cumulativeTargetData;
+        
+        const todayString = getProductionDateString();
+        const viewingToday = (endDateSelector.value === todayString && startDateSelector.value === todayString);
+
+        if (viewingToday) {
+            const currentHour = new Date().getHours();
+            let currentHourIndex = sortedHours.findIndex(h => parseInt(h.split(':')[0]) === currentHour);
+            
+            if (currentHourIndex === -1 && currentHour < 7) {
+                currentHourIndex = 17 + currentHour;
+            } else if (currentHourIndex === -1) {
+                // Se a hora atual não for encontrada (improvável), mostra o gráfico completo
+                currentHourIndex = 23;
+            }
+
+            const sliceIndex = Math.min(currentHourIndex + 2, sortedHours.length);
+
+            displayLabels = sortedHours.slice(0, sliceIndex);
+            displayProdData = cumulativeProductionData.slice(0, sliceIndex);
+            displayTargetData = cumulativeTargetData.slice(0, sliceIndex);
+        }
 
         productionTimelineChartInstance = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: sortedHours,
+                labels: displayLabels,
                 datasets: [
                     { 
                         label: 'Produção Acumulada', 
-                        data: cumulativeProductionData, 
-                        borderColor: 'rgba(8, 145, 178, 1)',
-                        backgroundColor: 'rgba(8, 145, 178, 0.1)',
+                        data: displayProdData, 
+                        borderColor: '#0077C2', // primary-blue
+                        backgroundColor: 'rgba(0, 119, 194, 0.1)',
                         fill: true,
                         tension: 0.3
                     },
                     {
                         label: 'Meta Acumulada',
-                        data: cumulativeTargetData,
-                        borderColor: 'rgba(239, 68, 68, 1)',
+                        data: displayTargetData,
+                        borderColor: '#DC2626', // status-error
                         borderDash: [5, 5],
                         fill: false,
                         pointRadius: 0
@@ -1348,7 +1389,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const ctx = document.getElementById('oeeByShiftChart').getContext('2d');
         if (oeeByShiftChartInstance) oeeByShiftChartInstance.destroy();
         
-        if (selectedMachine === 'total') {
+        if (!selectedMachine || selectedMachine === 'total') {
             return;
         }
         
@@ -1370,7 +1411,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 datasets: [{
                     label: 'Eficiência (OEE)',
                     data: [avgOee(oeeData.T1), avgOee(oeeData.T2), avgOee(oeeData.T3)],
-                    backgroundColor: ['rgba(8, 145, 178, 0.7)', 'rgba(56, 189, 248, 0.7)', 'rgba(14, 116, 144, 0.7)']
+                    backgroundColor: ['#4F46E5', '#10B981', '#0077C2'] // accent-1, accent-2, primary-blue
                 }]
             },
             options: {
@@ -1412,15 +1453,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     {
                         label: 'Refugo (kg)',
                         data: values,
-                        backgroundColor: 'rgba(239, 68, 68, 0.7)',
+                        backgroundColor: 'rgba(220, 38, 38, 0.7)', // status-error com alpha
                         yAxisID: 'y'
                     },
                     {
                         label: 'Acumulado %',
                         data: cumulativePercentage,
                         type: 'line',
-                        borderColor: 'rgba(37, 99, 235, 1)',
-                        backgroundColor: 'rgba(37, 99, 235, 0.2)',
+                        borderColor: '#4F46E5', // accent-1
+                        backgroundColor: 'rgba(79, 70, 229, 0.2)',
                         fill: false,
                         tension: 0.1,
                         yAxisID: 'y1'
@@ -1440,7 +1481,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function populateMachineFilter(data) {
         const machines = [...new Set(data.map(item => item.machine))].sort();
-        machineFilter.innerHTML = '<option value="total">Visão Geral (Total)</option>' + machines.map(m => `<option value="${m}">${m}</option>`).join('');
+        const mainOptions = '<option value="total">Visão Geral (Total)</option>' + machines.map(m => `<option value="${m}">${m}</option>`).join('');
+        const graphOptions = '<option value="">Selecione...</option>' + machines.map(m => `<option value="${m}">${m}</option>`).join('');
+        machineFilter.innerHTML = mainOptions;
+        graphMachineFilter.innerHTML = graphOptions;
     }
 
     // --- FUNÇÕES UTILITÁRIAS ---
