@@ -35,28 +35,22 @@ body {
     display: none;
 }
 
-/* ABAS DE ANÁLISE (Resumo vs Dashboard) */
-.analysis-tab-btn {
-    border-color: transparent;
-    color: #4B5563; /* gray-600 */
-}
-.analysis-tab-btn:hover {
-    color: #0077C2; /* primary-blue */
-}
+/* ABAS */
 .analysis-tab-btn.active {
     border-color: #0077C2; /* primary-blue */
     color: #005A9A;
     font-weight: 600;
 }
 
-
 /* BOTÕES DE TOGGLE */
 .report-toggle-btn.active,
-.chart-toggle-btn.active {
+.chart-toggle-btn.active,
+.date-range-btn.active {
     background-color: #0077C2; /* primary-blue */
     color: white;
     box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
 }
+
 input, select {
     transition: border-color 0.2s, box-shadow 0.2s;
 }
@@ -65,7 +59,6 @@ input:focus, select:focus {
     border-color: #0077C2;
     box-shadow: 0 0 0 1px #0077C2;
 }
-
 
 /* ESTILOS DE IMPRESSÃO */
 @media print {
@@ -89,3 +82,10 @@ input:focus, select:focus {
     }
 }
 
+/* Loading states */
+.text-status-success { color: #16A34A; }
+.text-status-warning { color: #F59E0B; }
+.text-status-error { color: #DC2626; }
+
+/* Utility classes */
+.hidden { display: none; }
