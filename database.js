@@ -1,6 +1,3 @@
-// Base de dados de produtos COMPLETA.
-// Esta versão une os dados da base original com os dados fornecidos no ficheiro Excel
-// e inclui a meta de "peças por hora" (pieces_per_hour_goal).
 const productDatabase = [
     // --- Dados da Base Original ---
     { "client": "SILGAN", "name": "ATUADOR DISPENSADOR", "cavities": 32, "cycle": 30.2, "weight": 0, "pieces_per_hour_goal": 3221 },
@@ -96,7 +93,7 @@ const productDatabase = [
     { "client": "JORNADA", "name": "FACE EXTERNA", "cavities": 1, "cycle": 42, "weight": 0, "pieces_per_hour_goal": 73 },
     { "client": "JORNADA", "name": "TAMPÃO", "cavities": 1, "cycle": 42, "weight": 0, "pieces_per_hour_goal": 73 },
     { "client": "JORNADA", "name": "V- 30 CINZA", "cavities": 4, "cycle": 26, "weight": 0, "pieces_per_hour_goal": 471 },
-    { "client": "JORNada", "name": "R - 120 - VERDE", "cavities": 8, "cycle": 26, "weight": 0, "pieces_per_hour_goal": 942 },
+    { "client": "JORNADA", "name": "R - 120 - VERDE", "cavities": 8, "cycle": 26, "weight": 0, "pieces_per_hour_goal": 942 },
     { "client": "JORNADA", "name": "L - 90 - AMARELO", "cavities": 8, "cycle": 26, "weight": 0, "pieces_per_hour_goal": 824 },
     { "client": "JORNADA", "name": "X - 360 - MARROM", "cavities": 4, "cycle": 26, "weight": 0, "pieces_per_hour_goal": 235 }
 ];
