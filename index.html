@@ -91,9 +91,9 @@
                             <div><label for="planning-client" class="block text-sm font-medium text-gray-700">Cliente</label><select id="planning-client" name="client" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></select></div>
                             <div><label for="planning-product" class="block text-sm font-medium text-gray-700">Produto</label><select id="planning-product" name="product" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm" disabled><option value="">Selecione um cliente</option></select></div>
                             <div class="grid grid-cols-3 gap-4">
-                                <div><label for="budgeted-cycle" class="block text-sm font-medium">Ciclo Padrão (s)</label><input type="number" id="budgeted-cycle" name="budgeted_cycle" required class="mt-1 w-full p-2 border-gray-300 rounded-md bg-gray-50" readonly></div>
-                                <div><label for="mold-cavities" class="block text-sm font-medium">Cav. Padrão</label><input type="number" id="mold-cavities" name="mold_cavities" required class="mt-1 w-full p-2 border-gray-300 rounded-md bg-gray-50" readonly></div>
-                                <div><label for="piece-weight" class="block text-sm font-medium">Peso Peça (g)</label><input type="number" id="piece-weight" name="piece_weight" required step="0.01" class="mt-1 w-full p-2 border-gray-300 rounded-md"></div>
+                                <div><label for="budgeted-cycle" class="block text-sm font-medium">Ciclo Orçado (s)</label><input type="number" id="budgeted-cycle" name="budgeted_cycle" required class="mt-1 w-full p-2 border-gray-300 rounded-md bg-gray-50" readonly></div>
+                                <div><label for="mold-cavities" class="block text-sm font-medium">Cav. Orçado</label><input type="number" id="mold-cavities" name="mold_cavities" required class="mt-1 w-full p-2 border-gray-300 rounded-md bg-gray-50" readonly></div>
+                                <div><label for="piece-weight" class="block text-sm font-medium">Peso Médio (g)</label><input type="number" id="piece-weight" name="piece_weight" required step="0.01" class="mt-1 w-full p-2 border-gray-300 rounded-md"></div>
                             </div>
                             <div><label for="planned-quantity" class="block text-sm font-medium">Qtd. Planejada (85% Efic.)</label><input type="number" id="planned-quantity" name="planned_quantity" required class="mt-1 w-full p-2 border-gray-300 rounded-md bg-gray-50" readonly></div>
                             <button type="submit" id="planning-submit-button" class="w-full bg-primary-blue hover:bg-blue-800 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2"><i data-lucide="plus-circle"></i><span>Adicionar ao Plano</span></button>
@@ -399,4 +399,5 @@
     <script src="script.js"></script>
 </body>
 </html>
+
 
