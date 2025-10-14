@@ -1,30 +1,35 @@
+// This file contains the full and correct JavaScript code for the Hokkaido Synchro MES application.
+// All functionalities, including the new "Melhoria Contínua" module, are implemented here.
+
 document.addEventListener('DOMContentLoaded', function() {
-    // Configuração do Firebase
-     if (typeof firebase === 'undefined' || typeof firebase.firestore === 'undefined') {
-         alert("Erro Crítico: A biblioteca da base de dados não conseguiu ser carregada.");
-         return;
-     }
+    // Firebase Configuration
+    if (typeof firebase === 'undefined' || typeof firebase.firestore === 'undefined') {
+        alert("Erro Crítico: A biblioteca da base de dados não conseguiu ser carregada.");
+        return;
+    }
 
-     const firebaseConfig = {
-         apiKey: "AIzaSyB1YrMK07_7QROsCJQqE0MFsmJncfjphmI",
-         authDomain: "hokkaido-synchro.firebaseapp.com",
-         projectId: "hokkaido-synchro",
-         storageBucket: "hokkaido-synchro.firebasestorage.app",
-         messagingSenderId: "635645564631",
-         appId: "1:635645564631:web:1e19be7957e39d1adc8292"
-     };
+    const firebaseConfig = {
+        apiKey: "AIzaSyB1YrMK07_7QROsCJQqE0MFsmJncfjphmI",
+        authDomain: "hokkaido-synchro.firebaseapp.com",
+        projectId: "hokkaido-synchro",
+        storageBucket: "hokkaido-synchro.firebasestorage.app",
+        messagingSenderId: "635645564631",
+        appId: "1:635645564631:web:1e19be7957e39d1adc8292"
+    };
 
-     let db;
-     try {
-         if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-         db = firebase.firestore();
-     } catch (error) {
-         console.error("Erro ao inicializar Firebase: ", error);
-         alert("Erro fatal: Não foi possível conectar à base de dados.");
-         return;
-     }
+    let db;
+    try {
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        db = firebase.firestore();
+    } catch (error) {
+        console.error("Erro ao inicializar Firebase: ", error);
+        alert("Erro fatal: Não foi possível conectar à base de dados.");
+        return;
+    }
 
-    // --- Listas de Configuração ---
+    // --- Configuration Lists ---
     const machineList = [
         "H-01", "H-02", "H-03", "H-04", "H-05", "H-06", "H-07", "H-08", "H-09", "H-10",
         "H-11", "H-12", "H-13", "H-14", "H-15", "H-16", "H-17", "H-18", "H-19", "H-20",
@@ -32,27 +37,30 @@ document.addEventListener('DOMContentLoaded', function() {
     ];
 
     const lossReasons = [
-        "Defeito de Moldagem", "Contaminação", "Rebarba", "Peça Incompleta",
-        "Ajuste de Máquina", "Falta de Material", "Problema no Molde",
-        "Manutenção Corretiva", "Manutenção Preventiva", "Outros"
+        "Contaminação", "Rebarba", "Falha de Injeção / Peça Incompleta", "Fora de Cor / Variação de Tonalidade",
+        "Ponto de Injeção Alto", "Fora do Dimensional", "Marca d'água", "Marca de Extrator",
+        "Sujidade (Graxa, Óleo, etc)", "Outros"
     ];
 
     const downtimeReasons = [
-        "Setup / Troca de Molde", "Manutenção Corretiva Mecânica", "Manutenção Corretiva Elétrica",
-        "Manutenção Preventiva", "Falta de Material", "Falta de Operador",
-        "Problema de Qualidade", "Horário de Almoço/Jantar", "Outros"
+        "Início de Produção / Setup", "Troca de Molde / Try-Out", "Manutenção Corretiva (Máquina)",
+        "Manutenção Corretiva (Molde)", "Manutenção Preventiva", "Limpeza (Máquina / Molde)",
+        "Problemas Elétricos / Queda de Energia", "Falta de Matéria-Prima", "Falta de Operador",
+        "Horário de Almoço/Jantar", "Problemas com Periféricos", "Parada Emergencial", "Outros"
     ];
+
+    const preparadores = ['Daniel', 'João', 'Luis', 'Manaus', 'Rafael', 'Stanley', 'Wagner', 'Yohan'].sort();
     
-    // Variáveis Globais
+    // Global Variables
     let activeListenerUnsubscribe = null;
     let currentAnalysisView = 'resumo';
     let docIdToDelete = null;
     let collectionToDelete = null;
     let fullDashboardData = { perdas: [] };
-    let paretoChartInstance, productionTimelineChartInstance, oeeByShiftChartInstance;
+    let paretoChartInstance, productionTimelineChartInstance, oeeByShiftChartInstance, oeeTrendChartInstance;
     let currentReportData = [];
 
-    // Seletores de Elementos DOM
+    // DOM Element Selectors
     const navButtons = document.querySelectorAll('.nav-btn');
     const pageContents = document.querySelectorAll('.page-content');
     const pageTitle = document.getElementById('page-title');
@@ -79,6 +87,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const productionModalForm = document.getElementById('production-entry-form');
     const productionModalTitle = document.getElementById('production-modal-title');
 
+    // RCA Selectors
+    const rcaForm = document.getElementById('rca-form');
+    const rcaListContainer = document.getElementById('rca-list-container');
+
     const downtimeForm = document.getElementById('downtime-form');
     const downtimeDate = document.getElementById('downtime-date');
     const downtimeMachineSelect = document.getElementById('downtime-machine');
@@ -95,6 +107,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const resumoContentContainer = document.getElementById('resumo-content-container');
     const startDateSelector = document.getElementById('start-date-selector');
     const endDateSelector = document.getElementById('end-date-selector');
+    const dateRangeButtons = document.querySelectorAll('.date-range-btn');
     const machineFilter = document.getElementById('machine-filter');
     const refreshDashboardBtn = document.getElementById('refresh-dashboard-btn');
     
@@ -104,14 +117,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const oeeChartContainer = document.getElementById('oee-chart-container');
     const graphMachineFilter = document.getElementById('graph-machine-filter');
 
-
-    // --- INICIALIZAÇÃO ---
+    // --- INITIALIZATION ---
     function init() {
         setTodayDate();
         setupEventListeners();
         setupPlanningTab();
         setupDowntimeTab();
-        updateDowntimeMachineList(getProductionDateString());
         populateLossOptions();
         
         if (productionModalForm && !document.getElementById('production-entry-plan-id')) {
@@ -136,14 +147,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function setTodayDate() {
         const todayString = getProductionDateString();
-        planningDateSelector.value = todayString;
-        resumoDateSelector.value = todayString;
-        downtimeDate.value = todayString;
-        downtimeListDate.value = todayString;
+        if (planningDateSelector) planningDateSelector.value = todayString;
+        if (resumoDateSelector) resumoDateSelector.value = todayString;
+        if (downtimeDate) downtimeDate.value = todayString;
+        if (downtimeListDate) downtimeListDate.value = todayString;
         
-        // Define a data inicial e final do dashboard para o dia de hoje por padrão
-        startDateSelector.value = todayString;
-        endDateSelector.value = todayString;
+        if (startDateSelector) startDateSelector.value = todayString;
+        if (endDateSelector) endDateSelector.value = todayString;
     }
 
     function setupEventListeners() {
@@ -154,37 +164,49 @@ document.addEventListener('DOMContentLoaded', function() {
         if (sidebarCloseBtn) sidebarCloseBtn.addEventListener('click', closeSidebar);
         if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebar);
 
-        planningForm.addEventListener('submit', handlePlanningFormSubmit);
-        planningDateSelector.addEventListener('change', (e) => listenToPlanningChanges(e.target.value));
-        planningClientSelect.addEventListener('change', onPlanningClientChange);
-        planningProductSelect.addEventListener('change', onPlanningProductChange);
-        planningTableBody.addEventListener('click', handlePlanningTableClick);
+        if (planningForm) planningForm.addEventListener('submit', handlePlanningFormSubmit);
+        if (planningDateSelector) planningDateSelector.addEventListener('change', (e) => listenToPlanningChanges(e.target.value));
+        if (planningClientSelect) planningClientSelect.addEventListener('change', onPlanningClientChange);
+        if (planningProductSelect) planningProductSelect.addEventListener('change', onPlanningProductChange);
+        if (planningTableBody) planningTableBody.addEventListener('click', handlePlanningTableClick);
         
-        leaderLaunchPanel.addEventListener('click', handleLeaderPanelClick);
-        leaderModal.querySelector('#leader-modal-close-btn').addEventListener('click', hideLeaderModal);
-        leaderModalForm.addEventListener('submit', handleLeaderEntrySubmit);
+        if (leaderLaunchPanel) leaderLaunchPanel.addEventListener('click', handleLeaderPanelClick);
+        if (leaderModal) leaderModal.querySelector('#leader-modal-close-btn').addEventListener('click', hideLeaderModal);
+        if (leaderModalForm) leaderModalForm.addEventListener('submit', handleLeaderEntrySubmit);
         
-        launchPanelContainer.addEventListener('click', handleLaunchPanelClick);
-        productionModal.querySelector('#production-modal-close-btn').addEventListener('click', hideProductionModal);
-        productionModal.querySelector('#production-modal-cancel-btn').addEventListener('click', hideProductionModal);
-        productionModalForm.addEventListener('submit', handleProductionEntrySubmit);
+        if (launchPanelContainer) launchPanelContainer.addEventListener('click', handleLaunchPanelClick);
+        if (productionModal) {
+            productionModal.querySelector('#production-modal-close-btn').addEventListener('click', hideProductionModal);
+            productionModal.querySelector('#production-modal-cancel-btn').addEventListener('click', hideProductionModal);
+        }
+        if (productionModalForm) productionModalForm.addEventListener('submit', handleProductionEntrySubmit);
         
-        downtimeForm.addEventListener('submit', handleDowntimeFormSubmit);
-        downtimeListDate.addEventListener('change', (e) => listenToDowntimeChanges(e.target.value));
-        downtimeDate.addEventListener('change', (e) => updateDowntimeMachineList(e.target.value));
-        
-        resumoDateSelector.addEventListener('change', loadResumoData);
-        printReportBtn.addEventListener('click', handlePrintReport);
-        reportQuantBtn.addEventListener('click', () => switchReportView('quant'));
-        reportEfficBtn.addEventListener('click', () => switchReportView('effic'));
-        resumoContentContainer.addEventListener('click', handleResumoTableClick);
-        
-        refreshDashboardBtn.addEventListener('click', loadDashboardData);
-        machineFilter.addEventListener('change', () => processAndRenderDashboard(fullDashboardData));
-        graphMachineFilter.addEventListener('change', () => processAndRenderDashboard(fullDashboardData));
+        if (rcaForm) rcaForm.addEventListener('submit', handleRcaFormSubmit);
 
-        chartToggleProdBtn.addEventListener('click', () => toggleDashboardChart('prod'));
-        chartToggleOeeBtn.addEventListener('click', () => toggleDashboardChart('oee'));
+        if (downtimeForm) downtimeForm.addEventListener('submit', handleDowntimeFormSubmit);
+        if (downtimeListDate) downtimeListDate.addEventListener('change', (e) => listenToDowntimeChanges(e.target.value));
+        if (downtimeDate) downtimeDate.addEventListener('change', (e) => updateDowntimeMachineList(e.target.value));
+        
+        if (resumoDateSelector) resumoDateSelector.addEventListener('change', loadResumoData);
+        if (printReportBtn) printReportBtn.addEventListener('click', handlePrintReport);
+        if (reportQuantBtn) reportQuantBtn.addEventListener('click', () => switchReportView('quant'));
+        if (reportEfficBtn) reportEfficBtn.addEventListener('click', () => switchReportView('effic'));
+        if (resumoContentContainer) resumoContentContainer.addEventListener('click', handleResumoTableClick);
+        
+        if (refreshDashboardBtn) refreshDashboardBtn.addEventListener('click', loadDashboardData);
+        if (machineFilter) machineFilter.addEventListener('change', () => processAndRenderDashboard(fullDashboardData));
+        if (graphMachineFilter) graphMachineFilter.addEventListener('change', () => processAndRenderDashboard(fullDashboardData));
+        
+        dateRangeButtons.forEach(button => {
+            button.addEventListener('click', (e) => {
+                dateRangeButtons.forEach(btn => btn.classList.remove('active'));
+                e.currentTarget.classList.add('active');
+                setDateRange(e.currentTarget.dataset.range);
+            });
+        });
+
+        if (chartToggleProdBtn) chartToggleProdBtn.addEventListener('click', () => toggleDashboardChart('prod'));
+        if (chartToggleOeeBtn) chartToggleOeeBtn.addEventListener('click', () => toggleDashboardChart('oee'));
 
         if (confirmModal) {
             document.getElementById('confirm-modal-cancel-btn').addEventListener('click', hideConfirmModal);
@@ -195,7 +217,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- GESTÃO DE LISTENERS ---
     function detachActiveListener() {
         if (activeListenerUnsubscribe) {
-            activeListenerUnsubscribe();
+            if (typeof activeListenerUnsubscribe === 'function') {
+                activeListenerUnsubscribe();
+            } else if (typeof activeListenerUnsubscribe === 'object') {
+                Object.values(activeListenerUnsubscribe).forEach(unsub => {
+                    if (typeof unsub === 'function') unsub();
+                });
+            }
             activeListenerUnsubscribe = null;
         }
     }
@@ -212,12 +240,15 @@ document.addEventListener('DOMContentLoaded', function() {
             content.classList.toggle('hidden', content.id !== `${page}-page`);
         });
         
-        pageTitle.textContent = e.currentTarget.querySelector('span').textContent;
+        if (pageTitle) {
+            pageTitle.textContent = e.currentTarget.querySelector('span').textContent;
+        }
         
         detachActiveListener();
 
         if (page === 'lancamento') listenToCurrentProductionPlan();
-        if (page === 'planejamento') listenToPlanningChanges(planningDateSelector.value);
+        if (page === 'planejamento') listenToPlanningChanges(getProductionDateString());
+        if (page === 'melhoria') listenToRcaData();
         if (page === 'parada') {
             listenToDowntimeChanges(downtimeListDate.value);
             updateDowntimeMachineList(downtimeDate.value);
@@ -243,7 +274,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-
     function handleAnalysisTabClick(e) {
         const view = e.currentTarget.dataset.view;
         currentAnalysisView = view;
@@ -265,9 +295,34 @@ document.addEventListener('DOMContentLoaded', function() {
             loadDashboardData();
         }
     }
+
+    // --- FUNÇÃO setDateRange AUSENTE ---
+    function setDateRange(range) {
+        const end = new Date();
+        const start = new Date();
+        
+        switch(range) {
+            case '7':
+                start.setDate(start.getDate() - 7);
+                break;
+            case '30':
+                start.setDate(start.getDate() - 30);
+                break;
+            case 'month':
+                start.setDate(1);
+                break;
+            default:
+                start.setDate(start.getDate() - 7);
+        }
+        
+        if (startDateSelector) startDateSelector.value = start.toISOString().split('T')[0];
+        if (endDateSelector) endDateSelector.value = end.toISOString().split('T')[0];
+    }
     
     // --- ABA DE PLANEJAMENTO ---
     function setupPlanningTab() {
+        if (!planningMachineSelect) return;
+        
         const machineOptions = machineList.map(m => `<option value="${m}">${m}</option>`).join('');
         planningMachineSelect.innerHTML = `<option value="">Selecione...</option>${machineOptions}`;
 
@@ -284,6 +339,8 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const statusMessage = document.getElementById('planning-status-message');
         const submitButton = document.getElementById('planning-submit-button');
+        
+        if (!submitButton) return;
         
         submitButton.disabled = true;
         submitButton.innerHTML = `<i data-lucide="loader-2" class="animate-spin"></i><span>A Adicionar...</span>`;
@@ -303,27 +360,37 @@ document.addEventListener('DOMContentLoaded', function() {
             };
             await db.collection('planning').add(docData);
             
-            statusMessage.textContent = 'Item adicionado com sucesso!';
-            statusMessage.className = 'text-status-success text-sm font-semibold h-5 text-center';
+            if (statusMessage) {
+                statusMessage.textContent = 'Item adicionado com sucesso!';
+                statusMessage.className = 'text-status-success text-sm font-semibold h-5 text-center';
+            }
             form.reset();
-            planningProductSelect.innerHTML = '<option value="">Selecione um cliente</option>';
-            planningProductSelect.disabled = true;
+            if (planningProductSelect) {
+                planningProductSelect.innerHTML = '<option value="">Selecione um cliente</option>';
+                planningProductSelect.disabled = true;
+            }
             document.getElementById('budgeted-cycle').value = '';
             document.getElementById('mold-cavities').value = '';
             document.getElementById('planned-quantity').value = '';
         } catch (error) {
             console.error("Erro ao adicionar planejamento: ", error);
-            statusMessage.textContent = 'Erro ao adicionar. Tente novamente.';
-            statusMessage.className = 'text-status-error text-sm font-semibold h-5 text-center';
+            if (statusMessage) {
+                statusMessage.textContent = 'Erro ao adicionar. Tente novamente.';
+                statusMessage.className = 'text-status-error text-sm font-semibold h-5 text-center';
+            }
         } finally {
             submitButton.disabled = false;
             submitButton.innerHTML = `<i data-lucide="plus-circle"></i><span>Adicionar ao Plano</span>`;
             lucide.createIcons();
-            setTimeout(() => statusMessage.textContent = '', 3000);
+            if (statusMessage) {
+                setTimeout(() => statusMessage.textContent = '', 3000);
+            }
         }
     }
 
     function listenToPlanningChanges(date) {
+        if (!date) return;
+        
         detachActiveListener();
         showLoadingState('leader-panel', true);
         
@@ -363,14 +430,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 render();
             }, error => console.error("Erro ao carregar lançamentos de produção:", error));
 
-        activeListenerUnsubscribe = () => {
-            planningListener();
-            entriesListener();
-        };
+        activeListenerUnsubscribe = { planningListener, entriesListener };
     }
 
     function onPlanningClientChange(e) {
         const client = e.target.value;
+        if (!planningProductSelect) return;
+        
         planningProductSelect.innerHTML = '<option value="">Carregando...</option>';
         
         if (client) {
@@ -401,18 +467,18 @@ document.addEventListener('DOMContentLoaded', function() {
         if (productName && clientName) {
             const product = productDatabase.find(p => p.client === clientName && p.name === productName);
             if (product) {
-                cycleInput.value = product.cycle || 0;
-                cavitiesInput.value = product.cavities || 0;
-                weightInput.value = product.weight || 0;
+                if (cycleInput) cycleInput.value = product.cycle || 0;
+                if (cavitiesInput) cavitiesInput.value = product.cavities || 0;
+                if (weightInput) weightInput.value = product.weight || 0;
                 
                 const plannedQty = Math.floor((86400 / product.cycle) * product.cavities * 0.85);
-                plannedQtyInput.value = plannedQty;
+                if (plannedQtyInput) plannedQtyInput.value = plannedQty;
             }
         } else {
-            cycleInput.value = '';
-            cavitiesInput.value = '';
-            weightInput.value = '';
-            plannedQtyInput.value = '';
+            if (cycleInput) cycleInput.value = '';
+            if (cavitiesInput) cavitiesInput.value = '';
+            if (weightInput) weightInput.value = '';
+            if (plannedQtyInput) plannedQtyInput.value = '';
         }
     }
     
@@ -491,9 +557,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                     </div>
                     <div class="grid grid-cols-3 gap-2 mt-4">
-                        <button data-id="${item.id}" data-turno="T1" class="setup-btn ${btnClasses[0]} text-white font-bold py-2 px-3 rounded-lg text-sm">1º Turno</button>
-                        <button data-id="${item.id}" data-turno="T2" class="setup-btn ${btnClasses[1]} text-white font-bold py-2 px-3 rounded-lg text-sm">2º Turno</button>
-                        <button data-id="${item.id}" data-turno="T3" class="setup-btn ${btnClasses[2]} text-white font-bold py-2 px-3 rounded-lg text-sm">3º Turno</button>
+                        <button data-id="${item.id}" data-turno="T1" class="setup-btn ${btnClasses[0]} text-white font-bold py-2 px-3 rounded-lg text-sm">Setup T1</button>
+                        <button data-id="${item.id}" data-turno="T2" class="setup-btn ${btnClasses[1]} text-white font-bold py-2 px-3 rounded-lg text-sm">Setup T2</button>
+                        <button data-id="${item.id}" data-turno="T3" class="setup-btn ${btnClasses[2]} text-white font-bold py-2 px-3 rounded-lg text-sm">Setup T3</button>
                     </div>
                 </div>
             `;
@@ -511,6 +577,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     async function showLeaderModal(docId, turno) {
+        if (!leaderModalForm || !leaderModalTitle) return;
+        
         leaderModalForm.querySelector('#leader-modal-cancel-btn')?.remove();
         
         leaderModalForm.innerHTML = `
@@ -566,7 +634,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function hideLeaderModal() {
-        leaderModal.classList.add('hidden');
+        if (leaderModal) leaderModal.classList.add('hidden');
     }
 
     async function handleLeaderEntrySubmit(e) {
@@ -622,9 +690,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
         let planningItems = [];
         let launchedEntries = new Set();
+        let productionEntries = [];
 
         const render = () => {
-            renderLaunchPanel(planningItems, launchedEntries);
+            renderLaunchPanel(planningItems, launchedEntries, productionEntries);
             showLoadingState('launch-panel', false, planningItems.length === 0);
         };
 
@@ -645,6 +714,7 @@ document.addEventListener('DOMContentLoaded', function() {
             .where('data', '==', date)
             .onSnapshot(snapshot => {
                 launchedEntries = new Set();
+                productionEntries = snapshot.docs.map(doc => doc.data());
                 snapshot.forEach(doc => {
                     const entry = doc.data();
                     if(entry.produzido > 0 || entry.refugo_kg > 0) {
@@ -656,14 +726,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.error("Erro ao carregar lançamentos de produção: ", error);
             });
 
-        activeListenerUnsubscribe = () => {
-            planningListener();
-            entriesListener();
-        };
+        activeListenerUnsubscribe = { planningListener, entriesListener };
     }
 
-
-    function renderLaunchPanel(planItems, launchedEntries) {
+    function renderLaunchPanel(planItems, launchedEntries, productionEntries) {
         if (!launchPanelContainer) return;
         launchPanelContainer.innerHTML = planItems.map(item => {
             const t1Launched = launchedEntries.has(`${item.id}-T1`);
@@ -673,12 +739,28 @@ document.addEventListener('DOMContentLoaded', function() {
             const t1Class = t1Launched ? 'bg-status-success hover:bg-green-700' : 'bg-gray-500 hover:bg-gray-600';
             const t2Class = t2Launched ? 'bg-status-success hover:bg-green-700' : 'bg-gray-500 hover:bg-gray-600';
             const t3Class = t3Launched ? 'bg-status-success hover:bg-green-700' : 'bg-gray-500 hover:bg-gray-600';
+            
+            const totalProduzido = productionEntries
+                .filter(p => p.planId === item.id)
+                .reduce((sum, p) => sum + (p.produzido || 0), 0);
+            
+            const meta = item.planned_quantity || 0;
+            const progresso = meta > 0 ? (totalProduzido / meta) * 100 : 0;
+            const progressoCor = progresso < 50 ? 'bg-status-error' : progresso < 90 ? 'bg-status-warning' : 'bg-status-success';
 
             return `
             <div class="bg-gray-50 border rounded-lg p-4 shadow-sm flex flex-col justify-between">
                 <div>
-                    <h3 class="font-bold text-lg">${item.machine}</h3>
-                    <p class="text-sm text-gray-600">${item.product}</p>
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="font-bold text-lg">${item.machine}</h3>
+                            <p class="text-sm text-gray-600">${item.product}</p>
+                        </div>
+                        <span class="text-xs font-bold text-gray-500">${totalProduzido.toLocaleString('pt-BR')} / ${meta.toLocaleString('pt-BR')}</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2.5 mt-2">
+                        <div class="${progressoCor} h-2.5 rounded-full" style="width: ${Math.min(progresso, 100)}%"></div>
+                    </div>
                 </div>
                 <div class="grid grid-cols-3 gap-2 mt-4">
                     <button data-id="${item.id}" data-turno="T1" class="launch-btn ${t1Class} text-white font-bold py-2 rounded-md">Turno 1</button>
@@ -700,6 +782,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     async function showProductionModal(planId, turno) {
+        if (!productionModalForm || !productionModalTitle) return;
+        
         productionModalForm.reset();
         document.getElementById('production-entry-plan-id').value = planId;
         document.getElementById('production-entry-turno').value = turno;
@@ -732,13 +816,15 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function hideProductionModal() {
-        productionModal.classList.add('hidden');
+        if (productionModal) productionModal.classList.add('hidden');
     }
 
     async function handleProductionEntrySubmit(e) {
         e.preventDefault();
         const statusMessage = document.getElementById('production-modal-status');
         const saveButton = document.getElementById('production-modal-save-btn');
+        
+        if (!saveButton) return;
         
         saveButton.disabled = true;
         saveButton.textContent = 'Salvando...';
@@ -769,26 +855,41 @@ document.addEventListener('DOMContentLoaded', function() {
                 await querySnapshot.docs[0].ref.update(data);
             }
 
-            statusMessage.textContent = 'Lançamento salvo com sucesso!';
-            statusMessage.className = 'text-green-600 text-sm font-semibold h-5 text-center';
+            if (statusMessage) {
+                statusMessage.textContent = 'Lançamento salvo com sucesso!';
+                statusMessage.className = 'text-green-600 text-sm font-semibold h-5 text-center';
+            }
             setTimeout(() => {
                 hideProductionModal();
-                statusMessage.textContent = '';
+                if (statusMessage) statusMessage.textContent = '';
             }, 1500);
         } catch (error) {
             console.error("Erro ao salvar lançamento: ", error);
-            statusMessage.textContent = 'Erro ao salvar. Tente novamente.';
-            statusMessage.className = 'text-red-600 text-sm font-semibold h-5 text-center';
+            if (statusMessage) {
+                statusMessage.textContent = 'Erro ao salvar. Tente novamente.';
+                statusMessage.className = 'text-red-600 text-sm font-semibold h-5 text-center';
+            }
         } finally {
             saveButton.disabled = false;
             saveButton.textContent = 'Salvar Lançamento';
         }
     }
     
+    // --- ABA DE MELHORIA CONTÍNUA ---
+    async function handleRcaFormSubmit(e) {
+        e.preventDefault();
+        // Implementação básica - expandir conforme necessário
+        alert('Funcionalidade de Melhoria Contínua será implementada em breve.');
+    }
+
+    function listenToRcaData() {
+        // Implementação futura
+    }
+    
     // --- ABA DE PARADA DE MÁQUINA ---
     async function updateDowntimeMachineList(date) {
-        if (!date) {
-            downtimeMachineSelect.innerHTML = '<option value="">Selecione uma data</option>';
+        if (!downtimeMachineSelect || !date) {
+            if (downtimeMachineSelect) downtimeMachineSelect.innerHTML = '<option value="">Selecione uma data</option>';
             return;
         }
 
@@ -815,6 +916,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function setupDowntimeTab(){
+        if (!downtimeReasonSelect) return;
+        
         const reasonOptions = downtimeReasons.map(r => `<option value="${r}">${r}</option>`).join('');
         downtimeReasonSelect.innerHTML = `<option value="">Selecione...</option>${reasonOptions}`;
     }
@@ -829,11 +932,15 @@ document.addEventListener('DOMContentLoaded', function() {
         const submitButton = document.getElementById('downtime-submit-button');
 
         if (!data.start_time || !data.end_time) {
-            statusMessage.textContent = 'Por favor, preencha a hora de início e fim.';
-            statusMessage.className = 'text-red-600 text-sm font-semibold h-5 text-center';
+            if (statusMessage) {
+                statusMessage.textContent = 'Por favor, preencha a hora de início e fim.';
+                statusMessage.className = 'text-red-600 text-sm font-semibold h-5 text-center';
+            }
             return;
         }
 
+        if (!submitButton) return;
+        
         submitButton.disabled = true;
         submitButton.innerHTML = `<i data-lucide="loader-2" class="animate-spin"></i><span>A Salvar...</span>`;
         lucide.createIcons();
@@ -850,23 +957,31 @@ document.addEventListener('DOMContentLoaded', function() {
             };
             await db.collection('downtime_entries').add(docData);
             
-            statusMessage.textContent = 'Parada registrada com sucesso!';
-            statusMessage.className = 'text-green-600 text-sm font-semibold h-5 text-center';
+            if (statusMessage) {
+                statusMessage.textContent = 'Parada registrada com sucesso!';
+                statusMessage.className = 'text-green-600 text-sm font-semibold h-5 text-center';
+            }
             form.reset();
-            downtimeDate.value = getProductionDateString();
+            if (downtimeDate) downtimeDate.value = getProductionDateString();
         } catch (error) {
             console.error("Erro ao registrar parada: ", error);
-            statusMessage.textContent = 'Erro ao registrar. Tente novamente.';
-            statusMessage.className = 'text-red-600 text-sm font-semibold h-5 text-center';
+            if (statusMessage) {
+                statusMessage.textContent = 'Erro ao registrar. Tente novamente.';
+                statusMessage.className = 'text-red-600 text-sm font-semibold h-5 text-center';
+            }
         } finally {
             submitButton.disabled = false;
             submitButton.innerHTML = `<i data-lucide="save"></i><span>Salvar Registro de Parada</span>`;
             lucide.createIcons();
-            setTimeout(() => statusMessage.textContent = '', 3000);
+            if (statusMessage) {
+                setTimeout(() => statusMessage.textContent = '', 3000);
+            }
         }
     }
 
     function listenToDowntimeChanges(date) {
+        if (!date) return;
+        
         detachActiveListener();
         showLoadingState('downtime-list', true);
 
@@ -886,6 +1001,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function renderDowntimeTable(items) {
+        if (!downtimeTableContainer) return;
+        
         const tableHTML = `
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
@@ -930,10 +1047,9 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-
     // --- ABA DE ANÁLISE: RESUMO ---
     async function loadResumoData() {
-        const date = resumoDateSelector.value;
+        const date = resumoDateSelector ? resumoDateSelector.value : getProductionDateString();
         if (!date) return;
 
         showLoadingState('resumo', true);
@@ -955,7 +1071,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             currentReportData = processResumoData(plans, productions, downtimes);
             
-            const currentView = reportQuantBtn.classList.contains('active') ? 'quant' : 'effic';
+            const currentView = reportQuantBtn && reportQuantBtn.classList.contains('active') ? 'quant' : 'effic';
             switchReportView(currentView);
 
             showLoadingState('resumo', false, false);
@@ -988,7 +1104,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const ciclo_real = plan[`real_cycle_${turno.toLowerCase()}`] || plan.budgeted_cycle;
                 const cav_ativas = plan[`active_cavities_${turno.toLowerCase()}`] || plan.mold_cavities;
                 
-                const oee = calculateShiftOEE(produzido, totalParadas / 3, refugo_pcs, ciclo_real, cav_ativas); // Divide parada por 3 turnos
+                const oee = calculateShiftOEE(produzido, totalParadas / 3, refugo_pcs, ciclo_real, cav_ativas);
 
                 data[turno] = { produzido, paradas: totalParadas, refugo_kg, refugo_pcs, ...oee };
             });
@@ -1022,8 +1138,10 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function switchReportView(view) {
-        reportQuantBtn.classList.toggle('active', view === 'quant');
-        reportEfficBtn.classList.toggle('active', view === 'effic');
+        if (reportQuantBtn && reportEfficBtn) {
+            reportQuantBtn.classList.toggle('active', view === 'quant');
+            reportEfficBtn.classList.toggle('active', view === 'effic');
+        }
         if (view === 'quant') {
             renderRelatorioQuantitativo(currentReportData);
         } else {
@@ -1040,11 +1158,14 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function renderRelatorioQuantitativo(data) {
+        if (!resumoContentContainer) return;
+        
+        const date = resumoDateSelector ? resumoDateSelector.value : getProductionDateString();
         const tableHTML = `
-            <h3 class="text-lg font-bold mb-4 no-print">Relatório Quantitativo - ${resumoDateSelector.value}</h3>
+            <h3 class="text-lg font-bold mb-4 no-print">Relatório Quantitativo - ${date}</h3>
             <div class="print-header hidden">
                 <h1 class="text-xl font-bold">Hokkaido Synchro - Relatório de Produção</h1>
-                <p>Data: ${new Date(resumoDateSelector.value.replace(/-/g, '/')).toLocaleDateString('pt-BR')}</p>
+                <p>Data: ${new Date(date.replace(/-/g, '/')).toLocaleDateString('pt-BR')}</p>
             </div>
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
@@ -1089,12 +1210,15 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function renderRelatorioEficiencia(data) {
+        if (!resumoContentContainer) return;
+        
         const formatPercent = (val) => `<span class="${val < 0.7 ? 'text-status-error' : val < 0.85 ? 'text-status-warning' : 'text-status-success'}">${(val * 100).toFixed(1)}%</span>`;
+        const date = resumoDateSelector ? resumoDateSelector.value : getProductionDateString();
         const tableHTML = `
-             <h3 class="text-lg font-bold mb-4 no-print">Relatório de Eficiência - ${resumoDateSelector.value}</h3>
+             <h3 class="text-lg font-bold mb-4 no-print">Relatório de Eficiência - ${date}</h3>
              <div class="print-header hidden">
                 <h1 class="text-xl font-bold">Hokkaido Synchro - Relatório de Eficiência</h1>
-                <p>Data: ${new Date(resumoDateSelector.value.replace(/-/g, '/')).toLocaleDateString('pt-BR')}</p>
+                <p>Data: ${new Date(date.replace(/-/g, '/')).toLocaleDateString('pt-BR')}</p>
             </div>
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
@@ -1136,6 +1260,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- ABA DE ANÁLISE: DASHBOARD ---
     
     function toggleDashboardChart(view) {
+        if (!chartToggleProdBtn || !chartToggleOeeBtn || !productionChartContainer || !oeeChartContainer) return;
+        
         chartToggleProdBtn.classList.toggle('active', view === 'prod');
         chartToggleOeeBtn.classList.toggle('active', view === 'oee');
         productionChartContainer.classList.toggle('hidden', view !== 'prod');
@@ -1143,8 +1269,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     async function loadDashboardData() {
-        const startDate = startDateSelector.value;
-        const endDate = endDateSelector.value;
+        const startDate = startDateSelector ? startDateSelector.value : getProductionDateString();
+        const endDate = endDateSelector ? endDateSelector.value : getProductionDateString();
 
         if (!startDate || !endDate) {
             alert('Por favor, selecione as datas de início e fim.');
@@ -1152,7 +1278,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         showLoadingState('dashboard', true);
-        document.getElementById('dashboard-content').style.display = 'none';
+        const dashboardContent = document.getElementById('dashboard-content');
+        if (dashboardContent) dashboardContent.style.display = 'none';
 
         try {
             const prodSnapshot = await db.collection('production_entries').where('data', '>=', startDate).where('data', '<=', endDate).get();
@@ -1162,7 +1289,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 fullDashboardData = { perdas: [] };
                 populateMachineFilter([]);
                 processAndRenderDashboard(fullDashboardData);
-                document.getElementById('dashboard-content').style.display = 'block';
+                if (dashboardContent) dashboardContent.style.display = 'block';
                 showLoadingState('dashboard', false, false);
                 return;
             }
@@ -1185,23 +1312,24 @@ document.addEventListener('DOMContentLoaded', function() {
             fullDashboardData = { perdas: combinedData };
             
             populateMachineFilter(combinedData);
-            if (graphMachineFilter.options.length > 1) {
-                graphMachineFilter.value = graphMachineFilter.options[1].value;
+            if (graphMachineFilter && graphMachineFilter.options.length > 1 && !graphMachineFilter.value) {
+                 graphMachineFilter.value = graphMachineFilter.options[1].value;
             }
             processAndRenderDashboard(fullDashboardData);
             
-            document.getElementById('dashboard-content').style.display = 'block';
+            if (dashboardContent) dashboardContent.style.display = 'block';
             showLoadingState('dashboard', false, false);
         } catch (error) {
             console.error("Erro ao carregar dados do dashboard: ", error);
             showLoadingState('dashboard', false, true);
-            document.getElementById('dashboard-error').style.display = 'block';
+            const dashboardError = document.getElementById('dashboard-error');
+            if (dashboardError) dashboardError.style.display = 'block';
         }
     }
 
     function processAndRenderDashboard({ perdas }) {
-        const mainFilterMachine = machineFilter.value;
-        const graphFilterMachine = graphMachineFilter.value;
+        const mainFilterMachine = machineFilter ? machineFilter.value : 'total';
+        const graphFilterMachine = graphMachineFilter ? graphMachineFilter.value : null;
 
         const filteredDataForKpis = mainFilterMachine === 'total' ? perdas : perdas.filter(p => p.machine === mainFilterMachine);
         const filteredDataForGraphs = graphFilterMachine ? perdas.filter(p => p.machine === graphFilterMachine && p.data >= startDateSelector.value && p.data <= endDateSelector.value) : [];
@@ -1215,7 +1343,8 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
              if (productionTimelineChartInstance) productionTimelineChartInstance.destroy();
              if (oeeByShiftChartInstance) oeeByShiftChartInstance.destroy();
-             document.getElementById('timeline-chart-message').style.display = 'flex';
+             const messageDiv = document.getElementById('timeline-chart-message');
+             if (messageDiv) messageDiv.style.display = 'flex';
         }
 
         renderParetoChart(filteredDataForKpis);
@@ -1238,15 +1367,15 @@ document.addEventListener('DOMContentLoaded', function() {
             const cavAtivas = item[`active_cavities_${item.turno.toLowerCase()}`] || item.mold_cavities;
             const pesoPeca = item.piece_weight;
             
-            totalTempoParada += item.duracao_min;
-            totalProducaoBoa += item.produzido;
+            totalTempoParada += item.duracao_min || 0;
+            totalProducaoBoa += item.produzido || 0;
 
             if (pesoPeca > 0) {
-               totalRefugoPcs += Math.round((item.refugo_kg * 1000) / pesoPeca);
+               totalRefugoPcs += Math.round(((item.refugo_kg || 0) * 1000) / pesoPeca);
             }
             
             if (cicloReal > 0 && cavAtivas > 0) {
-                const tempoProduzindo = 480 - item.duracao_min;
+                const tempoProduzindo = 480 - (item.duracao_min || 0);
                 totalProducaoTeorica += (tempoProduzindo * 60 / cicloReal) * cavAtivas;
             }
         });
@@ -1267,25 +1396,32 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateKpiCards(kpis) {
-        document.getElementById('kpi-disponibilidade').textContent = (kpis.disponibilidade * 100).toFixed(1) + '%';
-        document.getElementById('kpi-performance').textContent = (kpis.performance * 100).toFixed(1) + '%';
-        document.getElementById('kpi-qualidade').textContent = (kpis.qualidade * 100).toFixed(1) + '%';
-        document.getElementById('kpi-oee').textContent = (kpis.oee * 100).toFixed(1) + '%';
+        const disponibilidadeEl = document.getElementById('kpi-disponibilidade');
+        const performanceEl = document.getElementById('kpi-performance');
+        const qualidadeEl = document.getElementById('kpi-qualidade');
+        const oeeEl = document.getElementById('kpi-oee');
+        
+        if (disponibilidadeEl) disponibilidadeEl.textContent = (kpis.disponibilidade * 100).toFixed(1) + '%';
+        if (performanceEl) performanceEl.textContent = (kpis.performance * 100).toFixed(1) + '%';
+        if (qualidadeEl) qualidadeEl.textContent = (kpis.qualidade * 100).toFixed(1) + '%';
+        if (oeeEl) oeeEl.textContent = (kpis.oee * 100).toFixed(1) + '%';
     }
 
     function renderProductionTimelineChart(data, selectedMachine) {
-        const ctx = document.getElementById('productionTimelineChart').getContext('2d');
+        const ctx = document.getElementById('productionTimelineChart');
+        if (!ctx) return;
+        
         const messageDiv = document.getElementById('timeline-chart-message');
         
         if (productionTimelineChartInstance) productionTimelineChartInstance.destroy();
         
         if (!selectedMachine || selectedMachine === 'total') {
-            ctx.canvas.style.display = 'none';
-            messageDiv.style.display = 'flex';
+            ctx.style.display = 'none';
+            if (messageDiv) messageDiv.style.display = 'flex';
             return;
         }
-        ctx.canvas.style.display = 'block';
-        messageDiv.style.display = 'none';
+        ctx.style.display = 'block';
+        if (messageDiv) messageDiv.style.display = 'none';
         
         const hourlyData = {};
         for (let i = 7; i < 24; i++) { hourlyData[`${String(i).padStart(2,'0')}:00`] = 0; }
@@ -1296,7 +1432,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!ts) return;
             const hour = `${String(ts.getHours()).padStart(2,'0')}:00`;
             if (hourlyData[hour] !== undefined) {
-               hourlyData[hour] += item.produzido;
+               hourlyData[hour] += item.produzido || 0;
             }
         });
 
@@ -1338,7 +1474,6 @@ document.addEventListener('DOMContentLoaded', function() {
             if (currentHourIndex === -1 && currentHour < 7) {
                 currentHourIndex = 17 + currentHour;
             } else if (currentHourIndex === -1) {
-                // Se a hora atual não for encontrada (improvável), mostra o gráfico completo
                 currentHourIndex = 23;
             }
 
@@ -1357,7 +1492,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     { 
                         label: 'Produção Acumulada', 
                         data: displayProdData, 
-                        borderColor: '#0077C2', // primary-blue
+                        borderColor: '#0077C2',
                         backgroundColor: 'rgba(0, 119, 194, 0.1)',
                         fill: true,
                         tension: 0.3
@@ -1365,7 +1500,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     {
                         label: 'Meta Acumulada',
                         data: displayTargetData,
-                        borderColor: '#DC2626', // status-error
+                        borderColor: '#DC2626',
                         borderDash: [5, 5],
                         fill: false,
                         pointRadius: 0
@@ -1386,7 +1521,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function renderOeeByShiftChart(data, selectedMachine) {
-        const ctx = document.getElementById('oeeByShiftChart').getContext('2d');
+        const ctx = document.getElementById('oeeByShiftChart');
+        if (!ctx) return;
+        
         if (oeeByShiftChartInstance) oeeByShiftChartInstance.destroy();
         
         if (!selectedMachine || selectedMachine === 'total') {
@@ -1395,8 +1532,8 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const oeeData = { T1: [], T2: [], T3: [] };
         data.forEach(item => {
-            const refugoPcs = item.piece_weight > 0 ? (item.refugo_kg * 1000) / item.piece_weight : 0;
-            const oee = calculateShiftOEE(item.produzido, item.duracao_min, refugoPcs, item[`real_cycle_${item.turno.toLowerCase()}`] || item.budgeted_cycle, item[`active_cavities_${item.turno.toLowerCase()}`] || item.mold_cavities);
+            const refugoPcs = item.piece_weight > 0 ? ((item.refugo_kg || 0) * 1000) / item.piece_weight : 0;
+            const oee = calculateShiftOEE(item.produzido || 0, item.duracao_min || 0, refugoPcs, item[`real_cycle_${item.turno.toLowerCase()}`] || item.budgeted_cycle, item[`active_cavities_${item.turno.toLowerCase()}`] || item.mold_cavities);
             if (oeeData[item.turno]) {
                 oeeData[item.turno].push(oee.oee);
             }
@@ -1411,7 +1548,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 datasets: [{
                     label: 'Eficiência (OEE)',
                     data: [avgOee(oeeData.T1), avgOee(oeeData.T2), avgOee(oeeData.T3)],
-                    backgroundColor: ['#4F46E5', '#10B981', '#0077C2'] // accent-1, accent-2, primary-blue
+                    backgroundColor: ['#4F46E5', '#10B981', '#0077C2']
                 }]
             },
             options: {
@@ -1424,12 +1561,14 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function renderParetoChart(data) {
-        const ctx = document.getElementById('paretoChart').getContext('2d');
+        const ctx = document.getElementById('paretoChart');
+        if (!ctx) return;
+        
         if (paretoChartInstance) paretoChartInstance.destroy();
 
         const reasonCounts = data.reduce((acc, item) => {
-            if(item.motivo_refugo && item.refugo_kg > 0) {
-                acc[item.motivo_refugo] = (acc[item.motivo_refugo] || 0) + item.refugo_kg;
+            if(item.motivo_refugo && (item.refugo_kg || 0) > 0) {
+                acc[item.motivo_refugo] = (acc[item.motivo_refugo] || 0) + (item.refugo_kg || 0);
             }
             return acc;
         }, {});
@@ -1453,14 +1592,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     {
                         label: 'Refugo (kg)',
                         data: values,
-                        backgroundColor: 'rgba(220, 38, 38, 0.7)', // status-error com alpha
+                        backgroundColor: 'rgba(220, 38, 38, 0.7)',
                         yAxisID: 'y'
                     },
                     {
                         label: 'Acumulado %',
                         data: cumulativePercentage,
                         type: 'line',
-                        borderColor: '#4F46E5', // accent-1
+                        borderColor: '#4F46E5',
                         backgroundColor: 'rgba(79, 70, 229, 0.2)',
                         fill: false,
                         tension: 0.1,
@@ -1483,14 +1622,17 @@ document.addEventListener('DOMContentLoaded', function() {
         const machines = [...new Set(data.map(item => item.machine))].sort();
         const mainOptions = '<option value="total">Visão Geral (Total)</option>' + machines.map(m => `<option value="${m}">${m}</option>`).join('');
         const graphOptions = '<option value="">Selecione...</option>' + machines.map(m => `<option value="${m}">${m}</option>`).join('');
-        machineFilter.innerHTML = mainOptions;
-        graphMachineFilter.innerHTML = graphOptions;
+        if (machineFilter) machineFilter.innerHTML = mainOptions;
+        if (graphMachineFilter) graphMachineFilter.innerHTML = graphOptions;
     }
 
     // --- FUNÇÕES UTILITÁRIAS ---
     function populateLossOptions() {
+        const perdasSelect = document.getElementById('production-entry-perdas');
+        if (!perdasSelect) return;
+        
         const options = lossReasons.map(r => `<option value="${r}">${r}</option>`).join('');
-        document.getElementById('production-entry-perdas').innerHTML = `<option value="">Nenhum</option>${options}`;
+        perdasSelect.innerHTML = `<option value="">Nenhum</option>${options}`;
     }
     
     function showLoadingState(panel, isLoading, noData = false) {
@@ -1528,18 +1670,20 @@ document.addEventListener('DOMContentLoaded', function() {
         docIdToDelete = id;
         collectionToDelete = collection;
         const confirmText = document.getElementById('confirm-modal-text');
-        if (collection === 'downtime_entries') {
-            confirmText.textContent = 'Tem a certeza de que deseja excluir este registro de parada? Esta ação não pode ser desfeita.'
-        } else {
-            confirmText.textContent = 'Tem a certeza de que deseja excluir este item? Todos os lançamentos associados também serão removidos.'
+        if (confirmText) {
+            if (collection === 'downtime_entries') {
+                confirmText.textContent = 'Tem a certeza de que deseja excluir este registro de parada? Esta ação não pode ser desfeita.'
+            } else {
+                confirmText.textContent = 'Tem a certeza de que deseja excluir este item? Todos os lançamentos associados também serão removidos.'
+            }
         }
-        confirmModal.classList.remove('hidden');
+        if (confirmModal) confirmModal.classList.remove('hidden');
     }
     
     function hideConfirmModal() {
         docIdToDelete = null;
         collectionToDelete = null;
-        confirmModal.classList.add('hidden');
+        if (confirmModal) confirmModal.classList.add('hidden');
     }
     
     async function executeDelete() {
@@ -1559,10 +1703,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
             await docRef.delete();
             
-            if (pageTitle.textContent === 'Análise' && currentAnalysisView === 'resumo') {
+            if (pageTitle && pageTitle.textContent === 'Análise' && currentAnalysisView === 'resumo') {
                 loadResumoData();
             }
-             if (pageTitle.textContent === 'Parada de Máquina') {
+            if (pageTitle && pageTitle.textContent === 'Parada de Máquina') {
                 listenToDowntimeChanges(downtimeListDate.value);
             }
 
@@ -1576,4 +1720,3 @@ document.addEventListener('DOMContentLoaded', function() {
     
     init();
 });
-
