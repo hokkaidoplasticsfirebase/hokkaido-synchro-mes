@@ -355,6 +355,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 budgeted_cycle: parseFloat(data.budgeted_cycle),
                 mold_cavities: parseInt(data.mold_cavities),
                 piece_weight: parseFloat(data.piece_weight),
+                box_weight: parseFloat(data.box_weight) || 0,
                 planned_quantity: parseInt(data.planned_quantity),
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
             };
@@ -785,6 +786,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!productionModalForm || !productionModalTitle) return;
         
         productionModalForm.reset();
+        
         document.getElementById('production-entry-plan-id').value = planId;
         document.getElementById('production-entry-turno').value = turno;
 
@@ -793,6 +795,13 @@ document.addEventListener('DOMContentLoaded', function() {
             if (planDoc.exists) {
                 const planData = planDoc.data();
                 productionModalTitle.textContent = `Lançamento: ${planData.machine} - ${turno}`;
+                // Salva o peso da peça e da caixa no formulário para uso posterior no cálculo
+                productionModalForm.dataset.pieceWeight = planData.piece_weight || 0;
+                productionModalForm.dataset.boxWeight = planData.box_weight || 0;
+                
+                // *** ATUALIZAÇÃO: Preenche o campo de peso da caixa (apenas visualização) ***
+                document.getElementById('production-entry-box-weight').value = planData.box_weight || 0;
+
             } else { throw new Error("Plano não encontrado."); }
             
             const entriesRef = db.collection('production_entries');
@@ -801,6 +810,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (!querySnapshot.empty) {
                 const prodEntry = querySnapshot.docs[0].data();
+                // O campo de kg parcial não será preenchido com dados antigos, ele serve apenas para entrada
                 document.getElementById('production-entry-produzido').value = prodEntry.produzido || 0;
                 document.getElementById('production-entry-refugo').value = prodEntry.refugo_kg || 0;
                 document.getElementById('production-entry-borras').value = prodEntry.borras_kg || 0;
@@ -833,8 +843,27 @@ document.addEventListener('DOMContentLoaded', function() {
         const planId = formData.get('planId');
         const turno = formData.get('turno');
         
+        // --- LÓGICA DE CÁLCULO ATUALIZADA ---
+        const producaoManual = parseInt(formData.get('produzido')) || 0;
+        const parcialKgBruto = parseFloat(formData.get('parcial_kg')) || 0;
+        
+        const pieceWeight = parseFloat(productionModalForm.dataset.pieceWeight) || 0;
+        const boxWeight = parseFloat(productionModalForm.dataset.boxWeight) || 0;
+        
+        // Desconta o peso da caixa para obter o peso líquido das peças
+        const parcialKgLiquido = Math.max(0, parcialKgBruto - boxWeight);
+        
+        let pecasDoPeso = 0;
+        if (parcialKgLiquido > 0 && pieceWeight > 0) {
+            // Usa Math.floor para arredondar para baixo, garantindo precisão
+            pecasDoPeso = Math.floor((parcialKgLiquido * 1000) / pieceWeight); // Converte kg para gramas
+        }
+
+        const totalProduzido = producaoManual + pecasDoPeso;
+        // --- FIM DA LÓGICA DE CÁLCULO ---
+
         const data = {
-            produzido: parseInt(formData.get('produzido')) || 0,
+            produzido: totalProduzido,
             duracao_min: 0,
             refugo_kg: parseFloat(formData.get('refugo')) || 0,
             borras_kg: parseFloat(formData.get('borras')) || 0,
@@ -1263,7 +1292,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!chartToggleProdBtn || !chartToggleOeeBtn || !productionChartContainer || !oeeChartContainer) return;
         
         chartToggleProdBtn.classList.toggle('active', view === 'prod');
-        chartToggleOeeBtn.classList.toggle('active', view === 'oee');
+        chartToggleOeeBtn.classList.toggle('active', view !== 'prod');
         productionChartContainer.classList.toggle('hidden', view !== 'prod');
         oeeChartContainer.classList.toggle('hidden', view !== 'oee');
     }
@@ -1720,3 +1749,4 @@ document.addEventListener('DOMContentLoaded', function() {
     
     init();
 });
+
