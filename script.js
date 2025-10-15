@@ -296,7 +296,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // --- FUNÇÃO setDateRange ---
+    // --- FUNÇÃO setDateRange AUSENTE ---
     function setDateRange(range) {
         const end = new Date();
         const start = new Date();
@@ -355,8 +355,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 budgeted_cycle: parseFloat(data.budgeted_cycle),
                 mold_cavities: parseInt(data.mold_cavities),
                 piece_weight: parseFloat(data.piece_weight),
-                box_weight: parseFloat(data.box_weight) || 0,
-                box_quantity_standard: parseInt(data.box_quantity_standard) || 0,
                 planned_quantity: parseInt(data.planned_quantity),
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
             };
@@ -787,7 +785,6 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!productionModalForm || !productionModalTitle) return;
         
         productionModalForm.reset();
-        
         document.getElementById('production-entry-plan-id').value = planId;
         document.getElementById('production-entry-turno').value = turno;
 
@@ -796,14 +793,6 @@ document.addEventListener('DOMContentLoaded', function() {
             if (planDoc.exists) {
                 const planData = planDoc.data();
                 productionModalTitle.textContent = `Lançamento: ${planData.machine} - ${turno}`;
-                
-                // Salva os dados do plano no formulário para uso posterior no cálculo
-                productionModalForm.dataset.pieceWeight = planData.piece_weight || 0;
-                productionModalForm.dataset.boxWeight = planData.box_weight || 0;
-                productionModalForm.dataset.boxQuantityStandard = planData.box_quantity_standard || 0;
-
-                document.getElementById('production-entry-box-weight').value = planData.box_weight || 0;
-
             } else { throw new Error("Plano não encontrado."); }
             
             const entriesRef = db.collection('production_entries');
@@ -812,9 +801,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (!querySnapshot.empty) {
                 const prodEntry = querySnapshot.docs[0].data();
-                // Limpamos os campos de entrada, pois cada lançamento é aditivo
-                document.getElementById('production-entry-full-boxes').value = 0;
-                document.getElementById('production-entry-parcial-kg').value = 0;
+                document.getElementById('production-entry-produzido').value = prodEntry.produzido || 0;
                 document.getElementById('production-entry-refugo').value = prodEntry.refugo_kg || 0;
                 document.getElementById('production-entry-borras').value = prodEntry.borras_kg || 0;
                 document.getElementById('production-entry-perdas').value = prodEntry.motivo_refugo || '';
@@ -846,59 +833,26 @@ document.addEventListener('DOMContentLoaded', function() {
         const planId = formData.get('planId');
         const turno = formData.get('turno');
         
-        // --- LÓGICA DE CÁLCULO ATUALIZADA ---
-        const fullBoxes = parseInt(formData.get('full_boxes')) || 0;
-        const parcialKgBruto = parseFloat(formData.get('parcial_kg')) || 0;
-        
-        const pieceWeight = parseFloat(productionModalForm.dataset.pieceWeight) || 0;
-        const boxWeight = parseFloat(productionModalForm.dataset.boxWeight) || 0;
-        const boxQuantityStandard = parseInt(productionModalForm.dataset.boxQuantityStandard) || 0;
-
-        // 1. Calcular peças das caixas fechadas
-        const pecasDeCaixasFechadas = fullBoxes * boxQuantityStandard;
-        
-        // 2. Calcular peças do peso parcial
-        const parcialKgLiquido = Math.max(0, parcialKgBruto - boxWeight);
-        let pecasDoPeso = 0;
-        if (parcialKgLiquido > 0 && pieceWeight > 0) {
-            pecasDoPeso = Math.floor((parcialKgLiquido * 1000) / pieceWeight);
-        }
-
-        // 3. Somar tudo para obter o total produzido neste lançamento
-        const totalProduzidoNesteLancamento = pecasDeCaixasFechadas + pecasDoPeso;
-        // --- FIM DA LÓGICA DE CÁLCULO ---
+        const data = {
+            produzido: parseInt(formData.get('produzido')) || 0,
+            duracao_min: 0,
+            refugo_kg: parseFloat(formData.get('refugo')) || 0,
+            borras_kg: parseFloat(formData.get('borras')) || 0,
+            motivo_refugo: formData.get('perdas'),
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        };
 
         try {
             const entriesRef = db.collection('production_entries');
             const q = entriesRef.where('planId', '==', planId).where('turno', '==', turno).limit(1);
             const querySnapshot = await q.get();
             
-            if (querySnapshot.empty) {
-                // Se não existe, cria o primeiro lançamento para este turno
+            if(querySnapshot.empty){
                 const planDoc = await db.collection('planning').doc(planId).get();
                 const planData = planDoc.data();
-                await entriesRef.add({
-                    produzido: totalProduzidoNesteLancamento,
-                    refugo_kg: parseFloat(formData.get('refugo')) || 0,
-                    borras_kg: parseFloat(formData.get('borras')) || 0,
-                    motivo_refugo: formData.get('perdas'),
-                    planId,
-                    turno,
-                    data: planData.date,
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                });
+                await entriesRef.add({ ...data, planId, turno, data: planData.date });
             } else {
-                // Se já existe, soma o novo valor ao valor existente
-                const entryDoc = querySnapshot.docs[0];
-                const existingData = entryDoc.data();
-                const novoTotalProduzido = (existingData.produzido || 0) + totalProduzidoNesteLancamento;
-                
-                await entryDoc.ref.update({
-                    produzido: novoTotalProduzido,
-                    refugo_kg: parseFloat(formData.get('refugo')) || 0,
-                    borras_kg: parseFloat(formData.get('borras')) || 0,
-                    motivo_refugo: formData.get('perdas'),
-                });
+                await querySnapshot.docs[0].ref.update(data);
             }
 
             if (statusMessage) {
@@ -924,6 +878,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- ABA DE MELHORIA CONTÍNUA ---
     async function handleRcaFormSubmit(e) {
         e.preventDefault();
+        // Implementação básica - expandir conforme necessário
         alert('Funcionalidade de Melhoria Contínua será implementada em breve.');
     }
 
@@ -1308,7 +1263,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!chartToggleProdBtn || !chartToggleOeeBtn || !productionChartContainer || !oeeChartContainer) return;
         
         chartToggleProdBtn.classList.toggle('active', view === 'prod');
-        chartToggleOeeBtn.classList.toggle('active', view !== 'prod');
+        chartToggleOeeBtn.classList.toggle('active', view === 'oee');
         productionChartContainer.classList.toggle('hidden', view !== 'prod');
         oeeChartContainer.classList.toggle('hidden', view !== 'oee');
     }
@@ -1765,4 +1720,3 @@ document.addEventListener('DOMContentLoaded', function() {
     
     init();
 });
-
