@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hokkaido Synchro v8.3</title>
+    <title>Hokkaido Synchro v8.4</title>
     <link rel="icon" href="https://i.postimg.cc/B6w5mWry/Design-sem-nome-3.png" type="image/png">
     
     <script src="https://cdn.tailwindcss.com"></script>
@@ -90,11 +90,14 @@
                             <div><label for="planning-machine" class="block text-sm font-medium text-gray-700">Máquina</label><select id="planning-machine" name="machine" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></select></div>
                             <div><label for="planning-client" class="block text-sm font-medium text-gray-700">Cliente</label><select id="planning-client" name="client" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></select></div>
                             <div><label for="planning-product" class="block text-sm font-medium text-gray-700">Produto</label><select id="planning-product" name="product" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm" disabled><option value="">Selecione um cliente</option></select></div>
-                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div><label for="budgeted-cycle" class="block text-sm font-medium">Ciclo Padrão (s)</label><input type="number" id="budgeted-cycle" name="budgeted_cycle" required class="mt-1 w-full p-2 border-gray-300 rounded-md bg-gray-50" readonly></div>
                                 <div><label for="mold-cavities" class="block text-sm font-medium">Cav. Padrão</label><input type="number" id="mold-cavities" name="mold_cavities" required class="mt-1 w-full p-2 border-gray-300 rounded-md bg-gray-50" readonly></div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div><label for="piece-weight" class="block text-sm font-medium">Peso Peça (g)</label><input type="number" id="piece-weight" name="piece_weight" required step="0.01" class="mt-1 w-full p-2 border-gray-300 rounded-md"></div>
                                 <div><label for="box-weight" class="block text-sm font-medium">Peso Caixa (kg)</label><input type="number" id="box-weight" name="box_weight" value="0" step="0.01" class="mt-1 w-full p-2 border-gray-300 rounded-md"></div>
+                                <div><label for="box-quantity-standard" class="block text-sm font-medium">Peças por Caixa</label><input type="number" id="box-quantity-standard" name="box_quantity_standard" required value="0" step="1" class="mt-1 w-full p-2 border-gray-300 rounded-md"></div>
                             </div>
                             <div><label for="planned-quantity" class="block text-sm font-medium">Qtd. Planejada (85% Efic.)</label><input type="number" id="planned-quantity" name="planned_quantity" required class="mt-1 w-full p-2 border-gray-300 rounded-md bg-gray-50" readonly></div>
                             <button type="submit" id="planning-submit-button" class="w-full bg-primary-blue hover:bg-blue-800 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2"><i data-lucide="plus-circle"></i><span>Adicionar ao Plano</span></button>
@@ -349,11 +352,11 @@
                 <input type="hidden" id="production-entry-turno" name="turno">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                        <label for="production-entry-produzido" class="block text-sm font-medium">Produção (pçs)</label>
-                        <input type="number" id="production-entry-produzido" name="produzido" min="0" value="0" class="mt-1 w-full p-2 border-gray-300 rounded-md">
+                        <label for="production-entry-full-boxes" class="block text-sm font-medium">Qtd. Caixas Fechadas</label>
+                        <input type="number" id="production-entry-full-boxes" name="full_boxes" min="0" value="0" class="mt-1 w-full p-2 border-gray-300 rounded-md">
                     </div>
                     <div>
-                        <label for="production-entry-parcial-kg" class="block text-sm font-medium">Peso Bruto (kg)</label>
+                        <label for="production-entry-parcial-kg" class="block text-sm font-medium">Peso Parcial Bruto (kg)</label>
                         <input type="number" id="production-entry-parcial-kg" name="parcial_kg" min="0" step="0.01" value="0" class="mt-1 w-full p-2 border-gray-300 rounded-md">
                     </div>
                     <div>
