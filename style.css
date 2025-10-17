@@ -89,3 +89,19 @@ input:focus, select:focus {
 
 /* Utility classes */
 .hidden { display: none; }
+
+/* Estilos para grupos de opções nos selects */
+optgroup {
+    font-weight: 600;
+    color: #0077C2;
+}
+
+optgroup option {
+    font-weight: normal;
+    color: #1F2937;
+    padding-left: 1rem;
+}
+
+select optgroup option {
+    margin-left: 10px;
+}
