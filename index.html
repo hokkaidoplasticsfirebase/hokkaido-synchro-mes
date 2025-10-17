@@ -367,46 +367,100 @@
     </div>
 
     <div id="production-entry-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-40 flex justify-center items-start p-4 overflow-y-auto">
-        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg m-4 mt-10">
-            <div class="flex justify-between items-center border-b pb-3 mb-5">
-                <h3 id="production-modal-title" class="text-xl font-bold"></h3>
-                <button id="production-modal-close-btn" class="p-1 rounded-full hover:bg-gray-200"><i data-lucide="x"></i></button>
+    <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-4xl m-4 mt-10">
+        <div class="flex justify-between items-center border-b pb-3 mb-5">
+            <h3 id="production-modal-title" class="text-xl font-bold"></h3>
+            <button id="production-modal-close-btn" class="p-1 rounded-full hover:bg-gray-200">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        
+        <!-- Informações do Produto -->
+        <div class="bg-blue-50 p-3 rounded-lg mb-4">
+            <div class="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                    <span id="product-weight-info" class="font-semibold">Peso da peça: 0g</span>
+                </div>
+                <div class="flex items-center">
+                    <input type="checkbox" id="use-tara-box" class="mr-2">
+                    <label for="use-tara-box" class="font-semibold">Usar Caixa de Tara</label>
+                    <input type="number" id="tara-box-weight" step="0.01" value="0" 
+                           class="ml-2 w-20 p-1 border rounded" readonly>
+                    <span id="tara-box-info" class="ml-2 text-sm text-gray-600">caixa plastica</span>
+                </div>
             </div>
-            <form id="production-entry-form" class="space-y-4">
-                <input type="hidden" id="production-entry-plan-id" name="planId">
-                <input type="hidden" id="production-entry-turno" name="turno">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        </div>
+
+        <form id="production-entry-form" class="space-y-4">
+            <input type="hidden" id="production-entry-plan-id" name="planId">
+            <input type="hidden" id="production-entry-turno" name="turno">
+            
+            <!-- Cabeçalho da tabela de lançamentos por hora -->
+            <div class="grid grid-cols-12 gap-2 font-semibold border-b pb-2 text-sm">
+                <div class="col-span-2">Hora</div>
+                <div class="col-span-3">Peso Bruto (kg)</div>
+                <div class="col-span-2">Tara</div>
+                <div class="col-span-3">Peças Calculadas</div>
+                <div class="col-span-2">Ação</div>
+            </div>
+            
+            <!-- Container para lançamentos por hora -->
+            <div id="hourly-entries-container" class="max-h-96 overflow-y-auto border rounded-lg p-2">
+                <!-- Os lançamentos serão inseridos aqui via JavaScript -->
+            </div>
+            
+            <!-- Resumo Total -->
+            <div class="bg-gray-50 p-4 rounded-lg mt-4">
+                <div class="grid grid-cols-3 gap-4 text-center">
                     <div>
-                        <label for="production-entry-produzido" class="block text-sm font-medium">Produção Boa (peças)</label>
-                        <input type="number" id="production-entry-produzido" name="produzido" min="0" value="0" class="mt-1 w-full p-2 border-gray-300 rounded-md">
+                        <div class="text-sm text-gray-600">Total Peso Líquido</div>
+                        <div id="total-peso-liquido" class="text-lg font-bold">0 kg</div>
                     </div>
-                    <div class="hidden">
-                        <label for="production-entry-parada" class="block text-sm font-medium">Tempo de Parada (min)</label>
-                        <input type="number" id="production-entry-parada" name="duracao_min" min="0" value="0" class="mt-1 w-full p-2 border-gray-300 rounded-md">
+                    <div>
+                        <div class="text-sm text-gray-600">Total de Peças</div>
+                        <div id="total-pecas" class="text-lg font-bold">0</div>
+                    </div>
+                    <div>
+                        <div class="text-sm text-gray-600">Produção Boa</div>
+                        <input type="number" id="production-entry-produzido" name="produzido" 
+                               min="0" value="0" class="w-full p-2 border rounded text-center font-bold">
                     </div>
                 </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label for="production-entry-refugo" class="block text-sm font-medium">Refugo (kg)</label>
-                        <input type="number" id="production-entry-refugo" name="refugo" min="0" step="0.01" value="0" class="mt-1 w-full p-2 border-gray-300 rounded-md">
-                    </div>
-                    <div>
-                        <label for="production-entry-borras" class="block text-sm font-medium">Peso das Borras (kg)</label>
-                        <input type="number" id="production-entry-borras" name="borras" min="0" step="0.01" value="0" class="mt-1 w-full p-2 border-gray-300 rounded-md">
-                    </div>
+            </div>
+
+            <!-- Campos de refugo -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                <div>
+                    <label for="production-entry-refugo" class="block text-sm font-medium">Refugo (kg)</label>
+                    <input type="number" id="production-entry-refugo" name="refugo" 
+                           min="0" step="0.01" value="0" class="mt-1 w-full p-2 border-gray-300 rounded-md">
                 </div>
                 <div>
-                    <label for="production-entry-perdas" class="block text-sm font-medium">Motivo do Refugo</label>
-                    <select id="production-entry-perdas" name="perdas" class="mt-1 w-full p-2 border-gray-300 rounded-md"></select>
+                    <label for="production-entry-borras" class="block text-sm font-medium">Peso das Borras (kg)</label>
+                    <input type="number" id="production-entry-borras" name="borras" 
+                           min="0" step="0.01" value="0" class="mt-1 w-full p-2 border-gray-300 rounded-md">
                 </div>
-                <div class="mt-6 flex justify-end gap-3 pt-4 border-t">
-                    <button type="button" id="production-modal-cancel-btn" class="bg-gray-200 hover:bg-gray-300 font-bold py-2 px-6 rounded-lg">Cancelar</button>
-                    <button type="submit" id="production-modal-save-btn" class="bg-primary-blue hover:bg-blue-800 text-white font-bold py-2 px-6 rounded-lg">Salvar Lançamento</button>
-                </div>
-                <div id="production-modal-status" class="text-sm font-semibold h-5 text-center mt-2"></div>
-            </form>
-        </div>
+            </div>
+            
+            <div>
+                <label for="production-entry-perdas" class="block text-sm font-medium">Motivo do Refugo</label>
+                <select id="production-entry-perdas" name="perdas" class="mt-1 w-full p-2 border-gray-300 rounded-md"></select>
+            </div>
+            
+            <div class="mt-6 flex justify-end gap-3 pt-4 border-t">
+                <button type="button" id="production-modal-cancel-btn" 
+                        class="bg-gray-200 hover:bg-gray-300 font-bold py-2 px-6 rounded-lg">
+                    Cancelar
+                </button>
+                <button type="submit" id="production-modal-save-btn" 
+                        class="bg-primary-blue hover:bg-blue-800 text-white font-bold py-2 px-6 rounded-lg">
+                    Salvar Lançamentos
+                </button>
+            </div>
+            <div id="production-modal-status" class="text-sm font-semibold h-5 text-center mt-2"></div>
+        </form>
     </div>
+</div>
 
     <div id="confirm-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
          <div class="bg-white rounded-lg shadow-lg p-6 w-full max-w-sm m-4 text-center">
