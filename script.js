@@ -287,6 +287,189 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // --- BANCO DE DADOS DE CAIXAS DE TARA ---
+    const taraBoxesDatabase = {
+        "H-01": { "peso": 0, "descricao": "caixa plastica" },
+        "H-02": { "peso": 0, "descricao": "caixa plastica" },
+        "H-03": { "peso": 0, "descricao": "caixa plastica" },
+        "H-04": { "peso": 0, "descricao": "caixa plastica" },
+        "H-05": { "peso": 0, "descricao": "caixa plastica" },
+        "H-06": { "peso": 0, "descricao": "caixa plastica" },
+        "H-07": { "peso": 0, "descricao": "caixa plastica" },
+        "H-08": { "peso": 0, "descricao": "caixa plastica" },
+        "H-09": { "peso": 0, "descricao": "caixa plastica" },
+        "H-10": { "peso": 0, "descricao": "caixa plastica" },
+        "H-11": { "peso": 0, "descricao": "caixa plastica" },
+        "H-12": { "peso": 0, "descricao": "caixa plastica" },
+        "H-13": { "peso": 0, "descricao": "caixa plastica" },
+        "H-14": { "peso": 0, "descricao": "caixa plastica" },
+        "H-15": { "peso": 0, "descricao": "caixa plastica" },
+        "H-16": { "peso": 0, "descricao": "caixa plastica" },
+        "H-17": { "peso": 0, "descricao": "caixa plastica" },
+        "H-18": { "peso": 0, "descricao": "caixa plastica" },
+        "H-19": { "peso": 0, "descricao": "caixa plastica" },
+        "H-20": { "peso": 0, "descricao": "caixa plastica" },
+        "H-26": { "peso": 0, "descricao": "caixa plastica" },
+        "H-27": { "peso": 0, "descricao": "caixa plastica" },
+        "H-28": { "peso": 0, "descricao": "caixa plastica" },
+        "H-29": { "peso": 0, "descricao": "caixa plastica" },
+        "H-30": { "peso": 0, "descricao": "caixa plastica" },
+        "H-31": { "peso": 0, "descricao": "caixa plastica" },
+        "H-32": { "peso": 0, "descricao": "caixa plastica" }
+    };
+
+    // --- FUNÇÕES DO NOVO SISTEMA DE LANÇAMENTOS POR HORA ---
+
+    // Função para carregar lançamentos por hora
+    async function loadHourlyEntries(planId, turno) {
+        const entriesRef = db.collection('hourly_production_entries');
+        const q = entriesRef.where('planId', '==', planId).where('turno', '==', turno);
+        const querySnapshot = await q.get();
+        
+        const entriesContainer = document.getElementById('hourly-entries-container');
+        if (!entriesContainer) return;
+        
+        entriesContainer.innerHTML = '';
+        
+        const hours = [
+            '08:00', '09:00', '10:00', '11:00', '12:00',
+            '13:00', '14:00', '15:00', '16:00', '17:00', '18:00',
+            '19:00', '20:00', '21:00', '22:00', '23:00', '00:00',
+            '01:00', '02:00', '03:00', '04:00', '05:00', '06:00', '07:00'
+        ];
+        
+        const existingEntries = {};
+        querySnapshot.forEach(doc => {
+            const data = doc.data();
+            existingEntries[data.hora] = { id: doc.id, ...data };
+        });
+        
+        hours.forEach(hora => {
+            const entry = existingEntries[hora] || { hora, peso_bruto: '', usar_tara: false };
+            const entryElement = createHourlyEntryElement(entry, planId, turno);
+            entriesContainer.appendChild(entryElement);
+        });
+        
+        updateTotalCalculation();
+        lucide.createIcons();
+    }
+
+    // Função para criar elemento de lançamento por hora
+    function createHourlyEntryElement(entry, planId, turno) {
+        const div = document.createElement('div');
+        div.className = 'hourly-entry grid grid-cols-12 gap-2 items-center p-2 border-b text-sm';
+        div.innerHTML = `
+            <div class="col-span-2 font-medium">${entry.hora}</div>
+            <div class="col-span-3">
+                <input type="number" step="0.01" 
+                       value="${entry.peso_bruto || ''}" 
+                       placeholder="Peso bruto (kg)"
+                       class="peso-bruto-input w-full p-1 border rounded"
+                       data-hora="${entry.hora}">
+            </div>
+            <div class="col-span-2 flex items-center">
+                <input type="checkbox" ${entry.usar_tara ? 'checked' : ''} 
+                       class="usar-tara-checkbox mr-1"
+                       data-hora="${entry.hora}">
+                <span class="text-xs">Usar Tara</span>
+            </div>
+            <div class="col-span-3">
+                <span class="pecas-calculadas text-sm font-semibold">0 peças</span>
+            </div>
+            <div class="col-span-2">
+                ${entry.id ? 
+                    `<button type="button" class="delete-hourly-entry text-red-600 hover:text-red-800" data-id="${entry.id}">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>` : 
+                    ''
+                }
+            </div>
+        `;
+        return div;
+    }
+
+    // Função para buscar peso da peça do planejamento
+    async function getPieceWeightFromPlan(planId) {
+        try {
+            const planDoc = await db.collection('planning').doc(planId).get();
+            if (planDoc.exists) {
+                return planDoc.data().piece_weight || 0;
+            }
+        } catch (error) {
+            console.error("Erro ao buscar peso da peça:", error);
+        }
+        return 0;
+    }
+
+    // Função para calcular totais
+    async function updateTotalCalculation() {
+        const planId = document.getElementById('production-entry-plan-id').value;
+        const pieceWeight = await getPieceWeightFromPlan(planId);
+        const useTara = document.getElementById('use-tara-box').checked;
+        const taraWeight = parseFloat(document.getElementById('tara-box-weight').value) || 0;
+        
+        let totalPesoLiquido = 0;
+        let totalPecas = 0;
+        
+        // Calcular totais de cada hora
+        document.querySelectorAll('.hourly-entry').forEach(entry => {
+            const pesoBruto = parseFloat(entry.querySelector('.peso-bruto-input').value) || 0;
+            const usarTara = entry.querySelector('.usar-tara-checkbox').checked;
+            
+            const pesoLiquido = usarTara && useTara ? 
+                Math.max(0, pesoBruto - taraWeight) : pesoBruto;
+            
+            const pecas = pieceWeight > 0 ? Math.round((pesoLiquido * 1000) / pieceWeight) : 0;
+            
+            if (entry.querySelector('.pecas-calculadas')) {
+                entry.querySelector('.pecas-calculadas').textContent = `${pecas} peças`;
+            }
+            
+            totalPesoLiquido += pesoLiquido;
+            totalPecas += pecas;
+        });
+        
+        // Atualizar totais
+        const totalPesoLiquidoEl = document.getElementById('total-peso-liquido');
+        const totalPecasEl = document.getElementById('total-pecas');
+        const produzidoInput = document.getElementById('production-entry-produzido');
+        
+        if (totalPesoLiquidoEl) totalPesoLiquidoEl.textContent = `${totalPesoLiquido.toFixed(2)} kg`;
+        if (totalPecasEl) totalPecasEl.textContent = totalPecas.toLocaleString('pt-BR');
+        if (produzidoInput) produzidoInput.value = totalPecas;
+    }
+
+    // Função para salvar lançamentos por hora
+    async function saveHourlyEntries(planId, turno) {
+        const entries = [];
+        
+        document.querySelectorAll('.hourly-entry').forEach(entry => {
+            const hora = entry.querySelector('.peso-bruto-input').dataset.hora;
+            const pesoBruto = parseFloat(entry.querySelector('.peso-bruto-input').value) || 0;
+            const usarTara = entry.querySelector('.usar-tara-checkbox').checked;
+            
+            if (pesoBruto > 0) {
+                entries.push({
+                    planId,
+                    turno,
+                    hora,
+                    peso_bruto: pesoBruto,
+                    usar_tara: usarTara,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            }
+        });
+        
+        // Salvar no Firestore
+        const batch = db.batch();
+        entries.forEach(entry => {
+            const docRef = db.collection('hourly_production_entries').doc();
+            batch.set(docRef, entry);
+        });
+        
+        await batch.commit();
+    }
+
     // --- INITIALIZATION ---
     function init() {
         setTodayDate();
@@ -387,6 +570,36 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('confirm-modal-cancel-btn').addEventListener('click', hideConfirmModal);
             document.getElementById('confirm-modal-ok-btn').addEventListener('click', executeDelete);
         }
+
+        // NOVOS EVENT LISTENERS PARA O SISTEMA DE LANÇAMENTOS POR HORA
+        document.addEventListener('input', function(e) {
+            if (e.target.classList.contains('peso-bruto-input')) {
+                updateTotalCalculation();
+            }
+        });
+
+        document.addEventListener('change', function(e) {
+            if (e.target.classList.contains('usar-tara-checkbox') || e.target.id === 'use-tara-box') {
+                updateTotalCalculation();
+            }
+        });
+
+        // Event listener para deletar lançamentos por hora
+        document.addEventListener('click', async function(e) {
+            if (e.target.closest('.delete-hourly-entry')) {
+                const button = e.target.closest('.delete-hourly-entry');
+                const entryId = button.dataset.id;
+                
+                try {
+                    await db.collection('hourly_production_entries').doc(entryId).delete();
+                    button.closest('.hourly-entry').remove();
+                    updateTotalCalculation();
+                } catch (error) {
+                    console.error("Erro ao deletar lançamento:", error);
+                    alert("Erro ao deletar lançamento.");
+                }
+            }
+        });
     }
 
     // --- GESTÃO DE LISTENERS ---
@@ -745,9 +958,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                     </div>
                     <div class="grid grid-cols-3 gap-2 mt-4">
-                        <button data-id="${item.id}" data-turno="T1" class="setup-btn ${btnClasses[0]} text-white font-bold py-2 px-3 rounded-lg text-sm">Setup T1</button>
-                        <button data-id="${item.id}" data-turno="T2" class="setup-btn ${btnClasses[1]} text-white font-bold py-2 px-3 rounded-lg text-sm">Setup T2</button>
-                        <button data-id="${item.id}" data-turno="T3" class="setup-btn ${btnClasses[2]} text-white font-bold py-2 px-3 rounded-lg text-sm">Setup T3</button>
+                        <button data-id="${item.id}" data-turno="T1" class="setup-btn ${btnClasses[0]} text-white font-bold py-2 px-3 rounded-lg text-sm">1º Turno</button>
+                        <button data-id="${item.id}" data-turno="T2" class="setup-btn ${btnClasses[1]} text-white font-bold py-2 px-3 rounded-lg text-sm">2º Turno</button>
+                        <button data-id="${item.id}" data-turno="T3" class="setup-btn ${btnClasses[2]} text-white font-bold py-2 px-3 rounded-lg text-sm">3º Turno</button>
                     </div>
                 </div>
             `;
@@ -981,19 +1194,25 @@ document.addEventListener('DOMContentLoaded', function() {
             if (planDoc.exists) {
                 const planData = planDoc.data();
                 productionModalTitle.textContent = `Lançamento: ${planData.machine} - ${turno}`;
+                
+                // Configurar informações do produto
+                document.getElementById('product-weight-info').textContent = 
+                    `Peso da peça: ${planData.piece_weight || 0}g`;
+                
+                // Configurar caixa de tara
+                const taraCheckbox = document.getElementById('use-tara-box');
+                const taraWeightInput = document.getElementById('tara-box-weight');
+                const taraInfo = document.getElementById('tara-box-info');
+                
+                const taraData = taraBoxesDatabase[planData.machine];
+                if (taraData) {
+                    taraWeightInput.value = taraData.peso;
+                    taraInfo.textContent = taraData.descricao;
+                }
             } else { throw new Error("Plano não encontrado."); }
             
-            const entriesRef = db.collection('production_entries');
-            const q = entriesRef.where('planId', '==', planId).where('turno', '==', turno).limit(1);
-            const querySnapshot = await q.get();
-
-            if (!querySnapshot.empty) {
-                const prodEntry = querySnapshot.docs[0].data();
-                document.getElementById('production-entry-produzido').value = prodEntry.produzido || 0;
-                document.getElementById('production-entry-refugo').value = prodEntry.refugo_kg || 0;
-                document.getElementById('production-entry-borras').value = prodEntry.borras_kg || 0;
-                document.getElementById('production-entry-perdas').value = prodEntry.motivo_refugo || '';
-            }
+            // Carregar lançamentos existentes
+            await loadHourlyEntries(planId, turno);
             
             productionModal.classList.remove('hidden');
 
@@ -1031,6 +1250,10 @@ document.addEventListener('DOMContentLoaded', function() {
         };
 
         try {
+            // Salvar lançamentos por hora
+            await saveHourlyEntries(planId, turno);
+
+            // Salvar registro principal de produção
             const entriesRef = db.collection('production_entries');
             const q = entriesRef.where('planId', '==', planId).where('turno', '==', turno).limit(1);
             const querySnapshot = await q.get();
@@ -1044,7 +1267,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             if (statusMessage) {
-                statusMessage.textContent = 'Lançamento salvo com sucesso!';
+                statusMessage.textContent = 'Lançamentos salvos com sucesso!';
                 statusMessage.className = 'text-green-600 text-sm font-semibold h-5 text-center';
             }
             setTimeout(() => {
@@ -1052,14 +1275,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (statusMessage) statusMessage.textContent = '';
             }, 1500);
         } catch (error) {
-            console.error("Erro ao salvar lançamento: ", error);
+            console.error("Erro ao salvar lançamentos: ", error);
             if (statusMessage) {
                 statusMessage.textContent = 'Erro ao salvar. Tente novamente.';
                 statusMessage.className = 'text-red-600 text-sm font-semibold h-5 text-center';
             }
         } finally {
             saveButton.disabled = false;
-            saveButton.textContent = 'Salvar Lançamento';
+            saveButton.textContent = 'Salvar Lançamentos';
         }
     }
     
