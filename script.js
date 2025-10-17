@@ -1,5 +1,5 @@
 // This file contains the full and correct JavaScript code for the Hokkaido Synchro MES application.
-// All functionalities, including the new "Melhoria Contínua" module, are implemented here.
+// All functionalities, including the new database with product codes, are implemented here.
 
 document.addEventListener('DOMContentLoaded', function() {
     // Firebase Configuration
@@ -111,8 +111,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const planningDateSelector = document.getElementById('planning-date-selector');
     const planningForm = document.getElementById('planning-form');
     const planningTableBody = document.getElementById('planning-table-body');
-    const planningClientSelect = document.getElementById('planning-client');
-    const planningProductSelect = document.getElementById('planning-product');
     const planningMachineSelect = document.getElementById('planning-machine');
     const leaderLaunchPanel = document.getElementById('leader-launch-panel');
     const leaderModal = document.getElementById('leader-entry-modal');
@@ -123,7 +121,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const productionModal = document.getElementById('production-entry-modal');
     const productionModalForm = document.getElementById('production-entry-form');
     const productionModalTitle = document.getElementById('production-modal-title');
-
+    
     // RCA Selectors
     const rcaForm = document.getElementById('rca-form');
     const rcaListContainer = document.getElementById('rca-list-container');
@@ -338,8 +336,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (planningForm) planningForm.addEventListener('submit', handlePlanningFormSubmit);
         if (planningDateSelector) planningDateSelector.addEventListener('change', (e) => listenToPlanningChanges(e.target.value));
-        if (planningClientSelect) planningClientSelect.addEventListener('change', onPlanningClientChange);
-        if (planningProductSelect) planningProductSelect.addEventListener('change', onPlanningProductChange);
+        
+        // Adicionar listener para código do produto
+        const productCodSelect = document.getElementById('planning-product-cod');
+        if (productCodSelect) {
+            productCodSelect.addEventListener('change', onPlanningProductCodChange);
+        }
+        
         if (planningTableBody) planningTableBody.addEventListener('click', handlePlanningTableClick);
         
         if (leaderLaunchPanel) leaderLaunchPanel.addEventListener('click', handleLeaderPanelClick);
@@ -497,9 +500,60 @@ document.addEventListener('DOMContentLoaded', function() {
         const machineOptions = machineList.map(m => `<option value="${m}">${m}</option>`).join('');
         planningMachineSelect.innerHTML = `<option value="">Selecione...</option>${machineOptions}`;
 
-        const clients = [...new Set(productDatabase.map(p => p.client))].sort();
-        const clientOptions = clients.map(c => `<option value="${c}">${c}</option>`).join('');
-        planningClientSelect.innerHTML = `<option value="">Selecione...</option>${clientOptions}`;
+        // Configurar select de código do produto
+        const productCodSelect = document.getElementById('planning-product-cod');
+        if (productCodSelect) {
+            // Ordenar produtos por código
+            const sortedProducts = [...productDatabase].sort((a, b) => a.cod - b.cod);
+            const productOptions = sortedProducts.map(p => 
+                `<option value="${p.cod}" data-client="${p.client}" data-name="${p.name}" data-cycle="${p.cycle}" data-cavities="${p.cavities}" data-weight="${p.weight}">
+                    ${p.cod} - ${p.name} (${p.client})
+                </option>`
+            ).join('');
+            productCodSelect.innerHTML = `<option value="">Selecione...</option>${productOptions}`;
+        }
+    }
+
+    function onPlanningProductCodChange(e) {
+        const productCod = e.target.value;
+        const selectedOption = e.target.selectedOptions[0];
+        
+        const cycleInput = document.getElementById('budgeted-cycle');
+        const cavitiesInput = document.getElementById('mold-cavities');
+        const weightInput = document.getElementById('piece-weight');
+        const plannedQtyInput = document.getElementById('planned-quantity');
+        const productNameDisplay = document.getElementById('product-name-display');
+
+        if (productCod && selectedOption) {
+            const client = selectedOption.dataset.client;
+            const name = selectedOption.dataset.name;
+            const cycle = parseFloat(selectedOption.dataset.cycle) || 0;
+            const cavities = parseInt(selectedOption.dataset.cavities) || 0;
+            const weight = parseFloat(selectedOption.dataset.weight) || 0;
+
+            if (cycleInput) cycleInput.value = cycle;
+            if (cavitiesInput) cavitiesInput.value = cavities;
+            if (weightInput) weightInput.value = weight;
+            
+            // Calcular quantidade planejada (85% de eficiência)
+            const plannedQty = Math.floor((86400 / cycle) * cavities * 0.85);
+            if (plannedQtyInput) plannedQtyInput.value = plannedQty;
+            
+            // Mostrar nome do produto selecionado
+            if (productNameDisplay) {
+                productNameDisplay.textContent = `${name} (${client})`;
+                productNameDisplay.style.display = 'block';
+            }
+        } else {
+            if (cycleInput) cycleInput.value = '';
+            if (cavitiesInput) cavitiesInput.value = '';
+            if (weightInput) weightInput.value = '';
+            if (plannedQtyInput) plannedQtyInput.value = '';
+            if (productNameDisplay) {
+                productNameDisplay.textContent = '';
+                productNameDisplay.style.display = 'none';
+            }
+        }
     }
 
     async function handlePlanningFormSubmit(e) {
@@ -508,6 +562,15 @@ document.addEventListener('DOMContentLoaded', function() {
         const formData = new FormData(form);
         const data = Object.fromEntries(formData.entries());
         
+        // Buscar dados completos do produto selecionado
+        const productCod = data.product_cod;
+        const product = productDatabase.find(p => p.cod == productCod);
+        
+        if (!product) {
+            alert('Produto não encontrado!');
+            return;
+        }
+
         const statusMessage = document.getElementById('planning-status-message');
         const submitButton = document.getElementById('planning-submit-button');
         
@@ -521,11 +584,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const docData = {
                 date: data.date,
                 machine: data.machine,
-                client: data.client,
-                product: data.product,
-                budgeted_cycle: parseFloat(data.budgeted_cycle),
-                mold_cavities: parseInt(data.mold_cavities),
-                piece_weight: parseFloat(data.piece_weight),
+                product_cod: product.cod,
+                client: product.client,
+                product: product.name,
+                budgeted_cycle: product.cycle,
+                mold_cavities: product.cavities,
+                piece_weight: parseFloat(data.piece_weight) || product.weight,
                 planned_quantity: parseInt(data.planned_quantity),
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
             };
@@ -536,13 +600,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 statusMessage.className = 'text-status-success text-sm font-semibold h-5 text-center';
             }
             form.reset();
-            if (planningProductSelect) {
-                planningProductSelect.innerHTML = '<option value="">Selecione um cliente</option>';
-                planningProductSelect.disabled = true;
-            }
             document.getElementById('budgeted-cycle').value = '';
             document.getElementById('mold-cavities').value = '';
+            document.getElementById('piece-weight').value = '';
             document.getElementById('planned-quantity').value = '';
+            const productNameDisplay = document.getElementById('product-name-display');
+            if (productNameDisplay) {
+                productNameDisplay.textContent = '';
+                productNameDisplay.style.display = 'none';
+            }
         } catch (error) {
             console.error("Erro ao adicionar planejamento: ", error);
             if (statusMessage) {
@@ -604,55 +670,6 @@ document.addEventListener('DOMContentLoaded', function() {
         activeListenerUnsubscribe = { planningListener, entriesListener };
     }
 
-    function onPlanningClientChange(e) {
-        const client = e.target.value;
-        if (!planningProductSelect) return;
-        
-        planningProductSelect.innerHTML = '<option value="">Carregando...</option>';
-        
-        if (client) {
-            const products = productDatabase.filter(p => p.client === client).map(p => p.name).sort();
-            const productOptions = products.map(p => `<option value="${p}">${p}</option>`).join('');
-            planningProductSelect.innerHTML = `<option value="">Selecione...</option>${productOptions}`;
-            planningProductSelect.disabled = false;
-        } else {
-            planningProductSelect.innerHTML = '<option value="">Selecione um cliente</option>';
-            planningProductSelect.disabled = true;
-        }
-        
-        document.getElementById('budgeted-cycle').value = '';
-        document.getElementById('mold-cavities').value = '';
-        document.getElementById('piece-weight').value = '';
-        document.getElementById('planned-quantity').value = '';
-    }
-
-    function onPlanningProductChange(e) {
-        const productName = e.target.value;
-        const clientName = planningClientSelect.value;
-        
-        const cycleInput = document.getElementById('budgeted-cycle');
-        const cavitiesInput = document.getElementById('mold-cavities');
-        const weightInput = document.getElementById('piece-weight');
-        const plannedQtyInput = document.getElementById('planned-quantity');
-
-        if (productName && clientName) {
-            const product = productDatabase.find(p => p.client === clientName && p.name === productName);
-            if (product) {
-                if (cycleInput) cycleInput.value = product.cycle || 0;
-                if (cavitiesInput) cavitiesInput.value = product.cavities || 0;
-                if (weightInput) weightInput.value = product.weight || 0;
-                
-                const plannedQty = Math.floor((86400 / product.cycle) * product.cavities * 0.85);
-                if (plannedQtyInput) plannedQtyInput.value = plannedQty;
-            }
-        } else {
-            if (cycleInput) cycleInput.value = '';
-            if (cavitiesInput) cavitiesInput.value = '';
-            if (weightInput) weightInput.value = '';
-            if (plannedQtyInput) plannedQtyInput.value = '';
-        }
-    }
-    
     function renderPlanningTable(items) {
         if (!planningTableBody) return;
         const orDash = (value) => value || '-';
