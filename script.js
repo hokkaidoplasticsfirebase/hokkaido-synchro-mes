@@ -36,17 +36,54 @@ document.addEventListener('DOMContentLoaded', function() {
         "H-26", "H-27", "H-28", "H-29", "H-30", "H-31", "H-32"
     ];
 
+    // Motivos de Refugo (conforme Excel - Grupos P, F, Q)
     const lossReasons = [
-        "Contaminação", "Rebarba", "Falha de Injeção / Peça Incompleta", "Fora de Cor / Variação de Tonalidade",
-        "Ponto de Injeção Alto", "Fora do Dimensional", "Marca d'água", "Marca de Extrator",
-        "Sujidade (Graxa, Óleo, etc)", "Outros"
+        // Grupo P - PROCESSO
+        "BOLHA", "CHUPAGEM", "CONTAMINAÇÃO", "DEGRADAÇÃO", "EMPENAMENTO", "FALHA", 
+        "FIAPO", "FORA DE COR", "INÍCIO/REÍNICIO", "JUNÇÃO", "MANCHAS", 
+        "MEDIDA FORA DO ESPECIFICADO", "MOÍDO", "PEÇAS PERDIDAS", "QUEIMA", "REBARBA",
+        
+        // Grupo F - FERRAMENTARIA
+        "DEFORMAÇÃO", "GALHO PRESO", "MARCA D'ÁGUA", "MARCA EXTRATOR", "RISCOS", "SUJIDADE",
+        
+        // Grupo Q - QUALIDADE
+        "INSPEÇÃO DE LINHA"
     ];
 
+    // Motivos de Parada (conforme Excel - Grupos A-K)
     const downtimeReasons = [
-        "Início de Produção / Setup", "Troca de Molde / Try-Out", "Manutenção Corretiva (Máquina)",
-        "Manutenção Corretiva (Molde)", "Manutenção Preventiva", "Limpeza (Máquina / Molde)",
-        "Problemas Elétricos / Queda de Energia", "Falta de Matéria-Prima", "Falta de Operador",
-        "Horário de Almoço/Jantar", "Problemas com Periféricos", "Parada Emergencial", "Outros"
+        // Grupo A - FERRAMENTARIA
+        "CORRETIVA DE MOLDE", "PREVENTIVA DE MOLDE", "TROCA DE VERSÃO",
+        
+        // Grupo B - PROCESSO
+        "ABERTURA DE CAVIDADE", "AJUSTE DE PROCESSO", "TRY OUT",
+        
+        // Grupo C - COMPRAS
+        "FALTA DE INSUMO PLANEJADA", "FALTA DE INSUMO NÃO PLANEJADA",
+        
+        // Grupo D - PREPARAÇÃO
+        "AGUARDANDO PREPARAÇÃO DE MATERIAL",
+        
+        // Grupo E - QUALIDADE
+        "AGUARDANDO CLIENTE/FORNECEDOR", "LIBERAÇÃO",
+        
+        // Grupo F - MANUTENÇÃO
+        "MANUTENÇÃO CORRETIVA", "MANUTENÇÃO PREVENTIVA",
+        
+        // Grupo G - PRODUÇÃO
+        "FALTA DE OPERADOR", "TROCA DE COR",
+        
+        // Grupo H - SETUP
+        "INSTALAÇÃO DE MOLDE", "RETIRADA DE MOLDE",
+        
+        // Grupo I - ADMINISTRATIVO
+        "FALTA DE ENERGIA",
+        
+        // Grupo J - PCP
+        "SEM PROGRAMAÇÃO",
+        
+        // Grupo K - COMERCIAL
+        "SEM PEDIDO"
     ];
 
     const preparadores = ['Daniel', 'João', 'Luis', 'Manaus', 'Rafael', 'Stanley', 'Wagner', 'Yohan'].sort();
@@ -116,6 +153,141 @@ document.addEventListener('DOMContentLoaded', function() {
     const productionChartContainer = document.getElementById('production-chart-container');
     const oeeChartContainer = document.getElementById('oee-chart-container');
     const graphMachineFilter = document.getElementById('graph-machine-filter');
+
+    // --- FUNÇÕES UTILITÁRIAS ---
+    function getGroupedLossReasons() {
+        return {
+            "PROCESSO": [
+                "BOLHA", "CHUPAGEM", "CONTAMINAÇÃO", "DEGRADAÇÃO", "EMPENAMENTO", "FALHA", 
+                "FIAPO", "FORA DE COR", "INÍCIO/REÍNICIO", "JUNÇÃO", "MANCHAS", 
+                "MEDIDA FORA DO ESPECIFICADO", "MOÍDO", "PEÇAS PERDIDAS", "QUEIMA", "REBARBA"
+            ],
+            "FERRAMENTARIA": [
+                "DEFORMAÇÃO", "GALHO PRESO", "MARCA D'ÁGUA", "MARCA EXTRATOR", "RISCOS", "SUJIDADE"
+            ],
+            "QUALIDADE": [
+                "INSPEÇÃO DE LINHA"
+            ]
+        };
+    }
+
+    function getGroupedDowntimeReasons() {
+        return {
+            "FERRAMENTARIA": ["CORRETIVA DE MOLDE", "PREVENTIVA DE MOLDE", "TROCA DE VERSÃO"],
+            "PROCESSO": ["ABERTURA DE CAVIDADE", "AJUSTE DE PROCESSO", "TRY OUT"],
+            "COMPRAS": ["FALTA DE INSUMO PLANEJADA", "FALTA DE INSUMO NÃO PLANEJADA"],
+            "PREPARAÇÃO": ["AGUARDANDO PREPARAÇÃO DE MATERIAL"],
+            "QUALIDADE": ["AGUARDANDO CLIENTE/FORNECEDOR", "LIBERAÇÃO"],
+            "MANUTENÇÃO": ["MANUTENÇÃO CORRETIVA", "MANUTENÇÃO PREVENTIVA"],
+            "PRODUÇÃO": ["FALTA DE OPERADOR", "TROCA DE COR"],
+            "SETUP": ["INSTALAÇÃO DE MOLDE", "RETIRADA DE MOLDE"],
+            "ADMINISTRATIVO": ["FALTA DE ENERGIA"],
+            "PCP": ["SEM PROGRAMAÇÃO"],
+            "COMERCIAL": ["SEM PEDIDO"]
+        };
+    }
+
+    function populateLossOptions() {
+        const perdasSelect = document.getElementById('production-entry-perdas');
+        if (!perdasSelect) return;
+        
+        const groupedReasons = getGroupedLossReasons();
+        let options = '<option value="">Nenhum</option>';
+        
+        // Adicionar opções agrupadas
+        Object.entries(groupedReasons).forEach(([group, reasons]) => {
+            options += `<optgroup label="${group}">`;
+            reasons.forEach(reason => {
+                options += `<option value="${reason}">${reason}</option>`;
+            });
+            options += `</optgroup>`;
+        });
+        
+        perdasSelect.innerHTML = options;
+    }
+
+    function showLoadingState(panel, isLoading, noData = false) {
+        const loadingEl = document.getElementById(`${panel}-loading`);
+        const noDataEl = document.getElementById(`${panel}-no-data`);
+        const contentEl = panel === 'leader-panel' ? leaderLaunchPanel : 
+                        panel === 'launch-panel' ? launchPanelContainer : 
+                        panel === 'resumo' ? resumoContentContainer :
+                        panel === 'downtime-list' ? downtimeTableContainer :
+                        document.getElementById('dashboard-content');
+
+        if (isLoading) {
+            if (loadingEl) loadingEl.style.display = 'block';
+            if (noDataEl) noDataEl.style.display = 'none';
+            if (contentEl) contentEl.style.display = 'none';
+        } else {
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (noData) {
+                if (noDataEl) noDataEl.style.display = 'block';
+                if (contentEl) contentEl.style.display = 'none';
+            } else {
+                if (noDataEl) noDataEl.style.display = 'none';
+                if (contentEl) {
+                    if (panel.includes('dashboard') || panel.includes('resumo') || panel.includes('list')) {
+                        contentEl.style.display = 'block';
+                    } else {
+                        contentEl.style.display = 'grid';
+                    }
+                }
+            }
+        }
+    }
+
+    function showConfirmModal(id, collection) {
+        docIdToDelete = id;
+        collectionToDelete = collection;
+        const confirmText = document.getElementById('confirm-modal-text');
+        if (confirmText) {
+            if (collection === 'downtime_entries') {
+                confirmText.textContent = 'Tem a certeza de que deseja excluir este registro de parada? Esta ação não pode ser desfeita.'
+            } else {
+                confirmText.textContent = 'Tem a certeza de que deseja excluir este item? Todos os lançamentos associados também serão removidos.'
+            }
+        }
+        if (confirmModal) confirmModal.classList.remove('hidden');
+    }
+    
+    function hideConfirmModal() {
+        docIdToDelete = null;
+        collectionToDelete = null;
+        if (confirmModal) confirmModal.classList.add('hidden');
+    }
+    
+    async function executeDelete() {
+        if (!docIdToDelete || !collectionToDelete) return;
+        
+        const docRef = db.collection(collectionToDelete).doc(docIdToDelete);
+
+        try {
+            if (collectionToDelete === 'planning') {
+                const prodEntriesSnapshot = await db.collection('production_entries').where('planId', '==', docIdToDelete).get();
+                const batch = db.batch();
+                prodEntriesSnapshot.docs.forEach(doc => {
+                    batch.delete(doc.ref);
+                });
+                await batch.commit();
+            }
+
+            await docRef.delete();
+            
+            if (pageTitle && pageTitle.textContent === 'Análise' && currentAnalysisView === 'resumo') {
+                loadResumoData();
+            }
+            if (pageTitle && pageTitle.textContent === 'Parada de Máquina') {
+                listenToDowntimeChanges(downtimeListDate.value);
+            }
+
+        } catch (error) {
+            console.error("Erro ao excluir: ", error);
+            alert("Não foi possível excluir o item e/ou seus dados associados.");
+        } finally {
+            hideConfirmModal();
+        }
+    }
 
     // --- INITIALIZATION ---
     function init() {
@@ -296,7 +468,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // --- FUNÇÃO setDateRange AUSENTE ---
     function setDateRange(range) {
         const end = new Date();
         const start = new Date();
@@ -918,8 +1089,19 @@ document.addEventListener('DOMContentLoaded', function() {
     function setupDowntimeTab(){
         if (!downtimeReasonSelect) return;
         
-        const reasonOptions = downtimeReasons.map(r => `<option value="${r}">${r}</option>`).join('');
-        downtimeReasonSelect.innerHTML = `<option value="">Selecione...</option>${reasonOptions}`;
+        const groupedReasons = getGroupedDowntimeReasons();
+        let reasonOptions = '<option value="">Selecione...</option>';
+        
+        // Adicionar opções agrupadas
+        Object.entries(groupedReasons).forEach(([group, reasons]) => {
+            reasonOptions += `<optgroup label="${group}">`;
+            reasons.forEach(reason => {
+                reasonOptions += `<option value="${reason}">${reason}</option>`;
+            });
+            reasonOptions += `</optgroup>`;
+        });
+        
+        downtimeReasonSelect.innerHTML = reasonOptions;
     }
 
     async function handleDowntimeFormSubmit(e) {
@@ -1626,97 +1808,5 @@ document.addEventListener('DOMContentLoaded', function() {
         if (graphMachineFilter) graphMachineFilter.innerHTML = graphOptions;
     }
 
-    // --- FUNÇÕES UTILITÁRIAS ---
-    function populateLossOptions() {
-        const perdasSelect = document.getElementById('production-entry-perdas');
-        if (!perdasSelect) return;
-        
-        const options = lossReasons.map(r => `<option value="${r}">${r}</option>`).join('');
-        perdasSelect.innerHTML = `<option value="">Nenhum</option>${options}`;
-    }
-    
-    function showLoadingState(panel, isLoading, noData = false) {
-        const loadingEl = document.getElementById(`${panel}-loading`);
-        const noDataEl = document.getElementById(`${panel}-no-data`);
-        const contentEl = panel === 'leader-panel' ? leaderLaunchPanel : 
-                        panel === 'launch-panel' ? launchPanelContainer : 
-                        panel === 'resumo' ? resumoContentContainer :
-                        panel === 'downtime-list' ? downtimeTableContainer :
-                        document.getElementById('dashboard-content');
-
-        if (isLoading) {
-            if (loadingEl) loadingEl.style.display = 'block';
-            if (noDataEl) noDataEl.style.display = 'none';
-            if (contentEl) contentEl.style.display = 'none';
-        } else {
-            if (loadingEl) loadingEl.style.display = 'none';
-            if (noData) {
-                if (noDataEl) noDataEl.style.display = 'block';
-                if (contentEl) contentEl.style.display = 'none';
-            } else {
-                if (noDataEl) noDataEl.style.display = 'none';
-                if (contentEl) {
-                    if (panel.includes('dashboard') || panel.includes('resumo') || panel.includes('list')) {
-                        contentEl.style.display = 'block';
-                    } else {
-                        contentEl.style.display = 'grid';
-                    }
-                }
-            }
-        }
-    }
-
-    function showConfirmModal(id, collection) {
-        docIdToDelete = id;
-        collectionToDelete = collection;
-        const confirmText = document.getElementById('confirm-modal-text');
-        if (confirmText) {
-            if (collection === 'downtime_entries') {
-                confirmText.textContent = 'Tem a certeza de que deseja excluir este registro de parada? Esta ação não pode ser desfeita.'
-            } else {
-                confirmText.textContent = 'Tem a certeza de que deseja excluir este item? Todos os lançamentos associados também serão removidos.'
-            }
-        }
-        if (confirmModal) confirmModal.classList.remove('hidden');
-    }
-    
-    function hideConfirmModal() {
-        docIdToDelete = null;
-        collectionToDelete = null;
-        if (confirmModal) confirmModal.classList.add('hidden');
-    }
-    
-    async function executeDelete() {
-        if (!docIdToDelete || !collectionToDelete) return;
-        
-        const docRef = db.collection(collectionToDelete).doc(docIdToDelete);
-
-        try {
-            if (collectionToDelete === 'planning') {
-                const prodEntriesSnapshot = await db.collection('production_entries').where('planId', '==', docIdToDelete).get();
-                const batch = db.batch();
-                prodEntriesSnapshot.docs.forEach(doc => {
-                    batch.delete(doc.ref);
-                });
-                await batch.commit();
-            }
-
-            await docRef.delete();
-            
-            if (pageTitle && pageTitle.textContent === 'Análise' && currentAnalysisView === 'resumo') {
-                loadResumoData();
-            }
-            if (pageTitle && pageTitle.textContent === 'Parada de Máquina') {
-                listenToDowntimeChanges(downtimeListDate.value);
-            }
-
-        } catch (error) {
-            console.error("Erro ao excluir: ", error);
-            alert("Não foi possível excluir o item e/ou seus dados associados.");
-        } finally {
-            hideConfirmModal();
-        }
-    }
-    
     init();
 });
