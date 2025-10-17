@@ -86,25 +86,54 @@
                     <div class="bg-white p-6 md:p-8 rounded-lg shadow-lg border-t-4 border-accent-1">
                         <h2 class="text-2xl font-bold mb-4 flex items-center gap-2"><i data-lucide="clipboard-list" class="text-accent-1"></i>Planejar Produção do Dia</h2>
                         <form id="planning-form" class="space-y-5 pt-4">
-                            <div><label for="planning-date-selector" class="block text-sm font-medium text-gray-700">Data do Planejamento</label><input type="date" id="planning-date-selector" name="date" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></div>
-                            <div><label for="planning-machine" class="block text-sm font-medium text-gray-700">Máquina</label><select id="planning-machine" name="machine" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></select></div>
-                            <div><label for="planning-client" class="block text-sm font-medium text-gray-700">Cliente</label><select id="planning-client" name="client" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></select></div>
-                            <div><label for="planning-product" class="block text-sm font-medium text-gray-700">Produto</label><select id="planning-product" name="product" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm" disabled><option value="">Selecione um cliente</option></select></div>
-                            <div class="grid grid-cols-3 gap-4">
-                                <div><label for="budgeted-cycle" class="block text-sm font-medium">Ciclo Padrão (s)</label><input type="number" id="budgeted-cycle" name="budgeted_cycle" required class="mt-1 w-full p-2 border-gray-300 rounded-md bg-gray-50" readonly></div>
-                                <div><label for="mold-cavities" class="block text-sm font-medium">Cav. Padrão</label><input type="number" id="mold-cavities" name="mold_cavities" required class="mt-1 w-full p-2 border-gray-300 rounded-md bg-gray-50" readonly></div>
-                                <div><label for="piece-weight" class="block text-sm font-medium">Peso Peça (g)</label><input type="number" id="piece-weight" name="piece_weight" required step="0.01" class="mt-1 w-full p-2 border-gray-300 rounded-md"></div>
+                            <div>
+                                <label for="planning-date-selector" class="block text-sm font-medium text-gray-700">Data do Planejamento</label>
+                                <input type="date" id="planning-date-selector" name="date" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm">
                             </div>
-                            <div><label for="planned-quantity" class="block text-sm font-medium">Qtd. Planejada (85% Efic.)</label><input type="number" id="planned-quantity" name="planned_quantity" required class="mt-1 w-full p-2 border-gray-300 rounded-md bg-gray-50" readonly></div>
-                            <button type="submit" id="planning-submit-button" class="w-full bg-primary-blue hover:bg-blue-800 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2"><i data-lucide="plus-circle"></i><span>Adicionar ao Plano</span></button>
+                            <div>
+                                <label for="planning-machine" class="block text-sm font-medium text-gray-700">Máquina</label>
+                                <select id="planning-machine" name="machine" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></select>
+                            </div>
+                            <div>
+                                <label for="planning-product-cod" class="block text-sm font-medium text-gray-700">Código do Produto</label>
+                                <select id="planning-product-cod" name="product_cod" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm">
+                                    <option value="">Selecione...</option>
+                                </select>
+                                <div id="product-name-display" class="mt-2 p-2 bg-gray-50 rounded-md text-sm font-medium text-primary-blue" style="display: none;"></div>
+                            </div>
+                            <div class="grid grid-cols-3 gap-4">
+                                <div>
+                                    <label for="budgeted-cycle" class="block text-sm font-medium">Ciclo Padrão (s)</label>
+                                    <input type="number" id="budgeted-cycle" name="budgeted_cycle" required class="mt-1 w-full p-2 border-gray-300 rounded-md bg-gray-50" readonly>
+                                </div>
+                                <div>
+                                    <label for="mold-cavities" class="block text-sm font-medium">Cav. Padrão</label>
+                                    <input type="number" id="mold-cavities" name="mold_cavities" required class="mt-1 w-full p-2 border-gray-300 rounded-md bg-gray-50" readonly>
+                                </div>
+                                <div>
+                                    <label for="piece-weight" class="block text-sm font-medium">Peso Peça (g)</label>
+                                    <input type="number" id="piece-weight" name="piece_weight" required step="0.01" class="mt-1 w-full p-2 border-gray-300 rounded-md">
+                                </div>
+                            </div>
+                            <div>
+                                <label for="planned-quantity" class="block text-sm font-medium">Qtd. Planejada (85% Efic.)</label>
+                                <input type="number" id="planned-quantity" name="planned_quantity" required class="mt-1 w-full p-2 border-gray-300 rounded-md bg-gray-50" readonly>
+                            </div>
+                            <button type="submit" id="planning-submit-button" class="w-full bg-primary-blue hover:bg-blue-800 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2">
+                                <i data-lucide="plus-circle"></i><span>Adicionar ao Plano</span>
+                            </button>
                             <div id="planning-status-message" class="text-sm font-semibold h-5 text-center"></div>
                         </form>
                     </div>
                     <div class="bg-white p-6 md:p-8 rounded-lg shadow-lg">
                         <h2 class="text-2xl font-bold mb-4 flex items-center gap-2"><i data-lucide="sliders-horizontal" class="text-accent-2"></i>Painel de Lançamento Ciclo/Cavidades</h2>
                         <div id="leader-launch-panel" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pt-4"></div>
-                        <div id="leader-panel-loading" class="text-center py-10" style="display: none;"><i data-lucide="loader-2" class="w-12 h-12 animate-spin text-primary-blue mx-auto"></i></div>
-                        <div id="leader-panel-no-data" class="text-center py-10 text-gray-500" style="display: none;"><p>Nenhum item planejado para a data selecionada.</p></div>
+                        <div id="leader-panel-loading" class="text-center py-10" style="display: none;">
+                            <i data-lucide="loader-2" class="w-12 h-12 animate-spin text-primary-blue mx-auto"></i>
+                        </div>
+                        <div id="leader-panel-no-data" class="text-center py-10 text-gray-500" style="display: none;">
+                            <p>Nenhum item planejado para a data selecionada.</p>
+                        </div>
                     </div>
                     <div class="bg-white p-6 md:p-8 rounded-lg shadow-lg">
                         <h2 class="text-2xl font-bold mb-4 flex items-center gap-2"><i data-lucide="list-checks" class="text-gray-600"></i>Controle de Ciclo/Cavidade</h2>
@@ -399,4 +428,3 @@
     <script src="script.js"></script>
 </body>
 </html>
-
