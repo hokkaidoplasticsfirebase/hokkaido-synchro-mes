@@ -97,4 +97,3 @@ const productDatabase = [
     { "client": "JORNADA", "name": "L - 90 - AMARELO", "cavities": 8, "cycle": 26, "weight": 0, "pieces_per_hour_goal": 824 },
     { "client": "JORNADA", "name": "X - 360 - MARROM", "cavities": 4, "cycle": 26, "weight": 0, "pieces_per_hour_goal": 235 }
 ];
-
