@@ -142,4 +142,35 @@ const productDatabase = [
     { "cod": 4006, "client": "CSINFT", "name": "FACE INTERNA BRANCA CSI - PECA 1", "cavities": 1, "cycle": 42, "weight": 17, "pieces_per_hour_goal": 73 },
     { "cod": 4007, "client": "JORNADA", "name": "FACE EXTERNA BRANCA CSI - PECA 2", "cavities": 1, "cycle": 42, "weight": 11.5, "pieces_per_hour_goal": 73 },
     { "cod": 4008, "client": "JORNADA", "name": "TAMPÃO BRANCO CSI - PECA 3", "cavities": 1, "cycle": 42, "weight": 4, "pieces_per_hour_goal": 73 }
-];
+]
+
+// Adicionar ao database.js
+const taraBoxesDatabase = {
+    "H-01": { "peso": 0, "descricao": "caixa plastica" },
+    "H-02": { "peso": 0, "descricao": "caixa plastica" },
+    "H-03": { "peso": 0, "descricao": "caixa plastica" },
+    "H-04": { "peso": 0, "descricao": "caixa plastica" },
+    "H-05": { "peso": 0, "descricao": "caixa plastica" },
+    "H-06": { "peso": 0, "descricao": "caixa plastica" },
+    "H-07": { "peso": 0, "descricao": "caixa plastica" },
+    "H-08": { "peso": 0, "descricao": "caixa plastica" },
+    "H-09": { "peso": 0, "descricao": "caixa plastica" },
+    "H-10": { "peso": 0, "descricao": "caixa plastica" },
+    "H-11": { "peso": 0, "descricao": "caixa plastica" },
+    "H-12": { "peso": 0, "descricao": "caixa plastica" },
+    "H-13": { "peso": 0, "descricao": "caixa plastica" },
+    "H-14": { "peso": 0, "descricao": "caixa plastica" },
+    "H-15": { "peso": 0, "descricao": "caixa plastica" },
+    "H-16": { "peso": 0, "descricao": "caixa plastica" },
+    "H-17": { "peso": 0, "descricao": "caixa plastica" },
+    "H-18": { "peso": 0, "descricao": "caixa plastica" },
+    "H-19": { "peso": 0, "descricao": "caixa plastica" },
+    "H-20": { "peso": 0, "descricao": "caixa plastica" },
+    "H-26": { "peso": 0, "descricao": "caixa plastica" },
+    "H-27": { "peso": 0, "descricao": "caixa plastica" },
+    "H-28": { "peso": 0, "descricao": "caixa plastica" },
+    "H-29": { "peso": 0, "descricao": "caixa plastica" },
+    "H-30": { "peso": 0, "descricao": "caixa plastica" },
+    "H-31": { "peso": 0, "descricao": "caixa plastica" },
+    "H-32": { "peso": 0, "descricao": "caixa plastica" }
+};
