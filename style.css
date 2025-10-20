@@ -105,3 +105,32 @@ optgroup option {
 select optgroup option {
     margin-left: 10px;
 }
+
+/* Estilo para os inputs de lançamento por hora */
+.hourly-entry input[type="number"] {
+    border: 1px solid #d1d5db;
+    border-radius: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.hourly-entry input[type="number"]:focus {
+    outline: none;
+    border-color: #0077C2;
+    box-shadow: 0 0 0 2px rgba(0, 119, 194, 0.2);
+}
+
+/* Ajuste para grid de 13 colunas */
+.grid-cols-13 {
+    grid-template-columns: repeat(13, minmax(0, 1fr));
+}
+
+/* Estilo específico para o campo de embalagem fechada */
+.embalagem-fechada-input {
+    background-color: #f0f9ff;
+    border-color: #0077C2;
+}
+
+.embalagem-fechada-input:focus {
+    background-color: #ffffff;
+}
