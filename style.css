@@ -2,6 +2,86 @@ body {
     font-family: 'Inter', sans-serif; 
 }
 
+/* Estilos para aba de análise */
+.analysis-tab-btn {
+    transition: all 0.3s ease;
+    border-bottom: 2px solid transparent;
+}
+
+.analysis-tab-btn:hover {
+    color: #0077C2;
+    border-bottom-color: #0077C2;
+}
+
+.analysis-tab-btn.active {
+    color: #0077C2;
+    border-bottom-color: #0077C2;
+    font-weight: 600;
+}
+
+.analysis-view {
+    animation: fadeIn 0.5s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Estilos para KPIs */
+.kpi-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.kpi-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+}
+
+/* Estilos para gráficos */
+.chart-container {
+    position: relative;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+    transition: box-shadow 0.3s ease;
+}
+
+.chart-container:hover {
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+}
+
+/* Estilos para ranking */
+.ranking-item {
+    transition: all 0.3s ease;
+    border-left: 4px solid transparent;
+}
+
+.ranking-item:hover {
+    background-color: #f8fafc;
+    border-left-color: #0077C2;
+    transform: translateX(5px);
+}
+
+/* Estilos para estados de loading */
+.loading-spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Estilos responsivos para análise */
+@media (max-width: 768px) {
+    .analysis-tab-btn {
+        font-size: 0.875rem;
+        padding: 0.5rem 0.75rem;
+    }
+}
+
 /* ESTILOS DA SIDEBAR DE NAVEGAÇÃO */
 .nav-btn {
     display: flex;
