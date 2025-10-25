@@ -144,6 +144,12 @@ const productDatabase = [
     { "cod": 4008, "client": "JORNADA", "name": "TAMPÃO BRANCO CSI - PECA 3", "cavities": 1, "cycle": 42, "weight": 4, "pieces_per_hour_goal": 73 }
 ]
 
+productDatabase.forEach(product => {
+    if (typeof product.mp === 'undefined') {
+        product.mp = '';
+    }
+});
+
 // Adicionar ao database.js
 const taraBoxesDatabase = {
     "H-01": { "peso": 0, "descricao": "caixa plastica" },
