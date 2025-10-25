@@ -3596,10 +3596,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 <label for="leader-entry-active-cavities" class="block text-sm font-medium">Cavidades Ativas (${turno})</label>
                 <input type="number" id="leader-entry-active-cavities" name="active_cavities" step="1" class="mt-1 w-full p-2 border-gray-300 rounded-md">
             </div>
-            <div>
-                <label for="leader-entry-produzido" class="block text-sm font-medium">Produção Boa (peças)</label>
-                <input type="number" id="leader-entry-produzido" name="produzido" min="0" class="mt-1 w-full p-2 border-gray-300 rounded-md">
-            </div>
             <div class="mt-6 flex justify-end gap-3 pt-4 border-t">
                 <button type="button" id="leader-modal-cancel-btn" class="bg-gray-200 hover:bg-gray-300 font-bold py-2 px-6 rounded-lg">Cancelar</button>
                 <button type="submit" class="bg-primary-blue hover:bg-blue-800 text-white font-bold py-2 px-6 rounded-lg">Salvar</button>
@@ -3622,16 +3618,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('leader-entry-active-cavities').value = data[`active_cavities_${turno.toLowerCase()}`] || '';
             }
             
-            const entriesRef = db.collection('production_entries');
-            const q = entriesRef.where('planId', '==', docId).where('turno', '==', turno).limit(1);
-            const querySnapshot = await q.get();
-
-            if (!querySnapshot.empty) {
-                const prodEntry = querySnapshot.docs[0].data();
-                console.log('[TRACE][showLeaderModal] existing production entry', prodEntry);
-                document.getElementById('leader-entry-produzido').value = prodEntry.produzido || '';
-            }
-
         } catch (error) {
             console.error("Erro ao buscar dados do setup: ", error);
         }
@@ -3651,14 +3637,12 @@ document.addEventListener('DOMContentLoaded', function() {
         const turno = formData.get('turno');
         const realCycle = parseFloat(formData.get('real_cycle')) || null;
         const activeCavities = parseInt(formData.get('active_cavities')) || null;
-        const produzido = parseInt(formData.get('produzido')) || 0;
 
         console.log('[TRACE][handleLeaderEntrySubmit] submission data', {
             docId,
             turno,
             realCycle,
-            activeCavities,
-            produzido
+            activeCavities
         });
 
         const planDataToUpdate = {
@@ -3670,38 +3654,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
         try {
             await db.collection('planning').doc(docId).update(planDataToUpdate);
-
-            const entriesRef = db.collection('production_entries');
-            const q = entriesRef.where('planId', '==', docId).where('turno', '==', turno).limit(1);
-            const querySnapshot = await q.get();
-
-            const planDoc = await db.collection('planning').doc(docId).get();
-            const planData = planDoc.exists ? planDoc.data() : {};
-            console.log('[TRACE][handleLeaderEntrySubmit] fetched plan data', planData);
-
-            if (querySnapshot.empty) {
-                console.log('[TRACE][handleLeaderEntrySubmit] creating production entry');
-                await entriesRef.add({
-                    planId: docId,
-                    turno: turno,
-                    produzido: produzido,
-                    data: planData.date || getProductionDateString(), // FIX: garante que o campo de data esteja sempre presente para filtros
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                    mp: planData.mp || '',
-                    machine: planData.machine || null, // FIX: garante que os lançamentos herdem a máquina para aparecer na análise
-                    duracao_min: 0, refugo_kg: 0, borras_kg: 0, motivo_refugo: "",
-                });
-            } else {
-                const entryDoc = querySnapshot.docs[0];
-                const existing = entryDoc.data();
-                console.log('[TRACE][handleLeaderEntrySubmit] updating existing entry', existing);
-                await entryDoc.ref.update({
-                    produzido: produzido,
-                    machine: existing.machine || planData.machine || null, // FIX: sincroniza máquina do lançamento existente
-                    mp: existing.mp || planData.mp || '',
-                    data: existing.data || planData.date || getProductionDateString()
-                });
-            }
 
             hideLeaderModal();
             console.log('[TRACE][handleLeaderEntrySubmit] completed successfully');
@@ -4247,6 +4199,12 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function setupActionButtons() {
+        // Botão de produção
+        const btnProduction = document.getElementById('btn-production');
+        if (btnProduction) {
+            btnProduction.addEventListener('click', openProductionModal);
+        }
+
         // Botão de perdas
         const btnLosses = document.getElementById('btn-losses');
         if (btnLosses) {
