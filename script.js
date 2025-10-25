@@ -223,6 +223,42 @@ document.addEventListener('DOMContentLoaded', function() {
     const graphMachineFilter = document.getElementById('graph-machine-filter');
 
     // --- FUNÇÕES UTILITÁRIAS ---
+    
+    // Funções para normalizar datas conforme o ciclo de trabalho (7h a 7h do dia seguinte)
+    // Turno 1: 07:00 - 15:00 | Turno 2: 15:00 - 23:00 | Turno 3: 23:00 - 07:00
+
+    function getWorkDay(dateStr, timeStr) {
+        if (!dateStr) return null;
+
+        let hours = 12; // padrão neutro (meio-dia)
+        if (typeof timeStr === 'string' && timeStr.includes(':')) {
+            const [timeHours] = timeStr.split(':').map(Number);
+            if (!Number.isNaN(timeHours)) {
+                hours = timeHours;
+            }
+        }
+
+        if (hours >= 7) {
+            return dateStr;
+        }
+
+        const [year, month, day] = dateStr.split('-').map(Number);
+        if ([year, month, day].some(n => Number.isNaN(n))) return dateStr;
+
+        const baseDate = new Date(year, (month || 1) - 1, day || 1);
+        baseDate.setDate(baseDate.getDate() - 1);
+        return baseDate.toISOString().split('T')[0];
+    }
+
+    function getWorkDayFromTimestamp(timestamp) {
+        if (!timestamp) return null;
+        const dateObj = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+        if (!(dateObj instanceof Date) || Number.isNaN(dateObj.getTime())) return null;
+        const isoString = new Date(dateObj.getTime() - dateObj.getTimezoneOffset() * 60000).toISOString();
+        const [datePart, timePart] = isoString.split('T');
+        return getWorkDay(datePart, timePart?.substring(0, 5));
+    }
+
     function getGroupedLossReasons() {
         return {
             "PROCESSO": [
@@ -579,7 +615,6 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('quick-production-form:', !!document.getElementById('quick-production-form'));
             console.log('quick-losses-form:', !!document.getElementById('quick-losses-form'));
             console.log('quick-downtime-form:', !!document.getElementById('quick-downtime-form'));
-            console.log('btn-production:', !!document.getElementById('btn-production'));
             console.log('btn-losses:', !!document.getElementById('btn-losses'));
             console.log('btn-downtime:', !!document.getElementById('btn-downtime'));
         }, 1000);
@@ -682,17 +717,14 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         // Event listeners para os botões de ação
-        const btnProduction = document.getElementById('btn-production');
         const btnLosses = document.getElementById('btn-losses');
         const btnDowntime = document.getElementById('btn-downtime');
         
         console.log('Botões encontrados:', {
-            production: !!btnProduction,
             losses: !!btnLosses,
             downtime: !!btnDowntime
         });
         
-        if (btnProduction) btnProduction.addEventListener('click', openProductionModal);
         if (btnLosses) btnLosses.addEventListener('click', openLossesModal);
         if (btnDowntime) btnDowntime.addEventListener('click', toggleDowntime);
         
@@ -848,45 +880,50 @@ document.addEventListener('DOMContentLoaded', function() {
         const machine = document.getElementById('analysis-machine').value;
         const shift = document.getElementById('analysis-shift').value;
         
+        const toIsoDate = (dateObj) => new Date(dateObj.getTime() - dateObj.getTimezoneOffset() * 60000).toISOString().split('T')[0];
         let startDate, endDate;
-        const today = new Date();
+        const workToday = getProductionDateString();
+        const baseDate = new Date(`${workToday}T12:00:00`);
         
         switch (period) {
             case 'today':
-                startDate = endDate = today.toISOString().split('T')[0];
+                startDate = endDate = workToday;
                 break;
             case 'yesterday':
-                const yesterday = new Date(today);
+                const yesterday = new Date(baseDate);
                 yesterday.setDate(yesterday.getDate() - 1);
-                startDate = endDate = yesterday.toISOString().split('T')[0];
+                startDate = endDate = toIsoDate(yesterday);
                 break;
             case '7days':
-                const week = new Date(today);
-                week.setDate(week.getDate() - 7);
-                startDate = week.toISOString().split('T')[0];
-                endDate = today.toISOString().split('T')[0];
+                const week = new Date(baseDate);
+                week.setDate(week.getDate() - 6);
+                startDate = toIsoDate(week);
+                endDate = workToday;
                 break;
             case '30days':
-                const month = new Date(today);
-                month.setDate(month.getDate() - 30);
-                startDate = month.toISOString().split('T')[0];
-                endDate = today.toISOString().split('T')[0];
+                const month = new Date(baseDate);
+                month.setDate(month.getDate() - 29);
+                startDate = toIsoDate(month);
+                endDate = workToday;
                 break;
             case 'month':
-                startDate = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
-                endDate = today.toISOString().split('T')[0];
+                startDate = toIsoDate(new Date(baseDate.getFullYear(), baseDate.getMonth(), 1));
+                endDate = workToday;
                 break;
             case 'lastmonth':
-                const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-                const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
-                startDate = lastMonth.toISOString().split('T')[0];
-                endDate = lastMonthEnd.toISOString().split('T')[0];
+                const lastMonth = new Date(baseDate.getFullYear(), baseDate.getMonth() - 1, 1);
+                const lastMonthEnd = new Date(baseDate.getFullYear(), baseDate.getMonth(), 0);
+                startDate = toIsoDate(lastMonth);
+                endDate = toIsoDate(lastMonthEnd);
                 break;
             case 'custom':
                 startDate = document.getElementById('analysis-start-date').value;
                 endDate = document.getElementById('analysis-end-date').value;
                 break;
         }
+
+        if (!startDate) startDate = workToday;
+        if (!endDate) endDate = workToday;
 
         // Atualizar dados com filtros
         currentAnalysisFilters = { startDate, endDate, machine, shift };
@@ -1335,6 +1372,7 @@ document.addEventListener('DOMContentLoaded', function() {
     async function getFilteredData(collection, startDate, endDate, machine = 'all', shift = 'all') {
         try {
             console.log('[TRACE][getFilteredData] called', { collection, startDate, endDate, machine, shift });
+            
             const normalizeShift = (value) => {
                 if (value === undefined || value === null) return null;
                 if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -1348,7 +1386,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     dateField: 'data',
                     mapper: (id, raw) => {
                         const mappedDate = raw.data || raw.date || '';
-                        const timestamp = raw.timestamp?.toDate?.() || raw.createdAt?.toDate?.() || null;
+                        const primaryTimestamp = raw.timestamp || raw.createdAt || raw.updatedAt;
+                        const timestamp = primaryTimestamp?.toDate?.() || null;
+                        const timeHint = raw.hora || raw.hour || raw.time || null;
+                        const workDay = getWorkDayFromTimestamp(primaryTimestamp) || getWorkDay(mappedDate, timeHint);
                         return {
                             id,
                             date: mappedDate,
@@ -1357,6 +1398,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             shift: normalizeShift(raw.turno ?? raw.shift),
                             datetime: timestamp ? timestamp.toISOString() : null,
                             mp: raw.mp || '',
+                            workDay: workDay || mappedDate,
                             raw
                         };
                     }
@@ -1364,17 +1406,24 @@ document.addEventListener('DOMContentLoaded', function() {
                 losses: {
                     collection: 'production_entries',
                     dateField: 'data',
-                    mapper: (id, raw) => ({
-                        id,
-                        date: raw.data || raw.date || '',
-                        machine: raw.machine || raw.machineRef || raw.machine_id || null,
-                        quantity: Number(raw.refugo_kg ?? raw.quantity ?? 0) || 0,
-                        shift: normalizeShift(raw.turno ?? raw.shift),
-                        reason: raw.perdas || raw.reason || '',
-                        mp: raw.mp || '',
-                        mp_type: raw.mp_type || '',
-                        raw
-                    })
+                    mapper: (id, raw) => {
+                        const dateValue = raw.data || raw.date || '';
+                        const primaryTimestamp = raw.timestamp || raw.createdAt || raw.updatedAt;
+                        const timeHint = raw.hora || raw.hour || raw.time || null;
+                        const workDay = getWorkDayFromTimestamp(primaryTimestamp) || getWorkDay(dateValue, timeHint);
+                        return {
+                            id,
+                            date: dateValue,
+                            machine: raw.machine || raw.machineRef || raw.machine_id || null,
+                            quantity: Number(raw.refugo_kg ?? raw.quantity ?? 0) || 0,
+                            shift: normalizeShift(raw.turno ?? raw.shift),
+                            reason: raw.perdas || raw.reason || '',
+                            mp: raw.mp || '',
+                            mp_type: raw.mp_type || '',
+                            workDay: workDay || dateValue,
+                            raw
+                        };
+                    }
                 },
                 downtime: {
                     collection: 'downtime_entries',
@@ -1386,6 +1435,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         if (!duration && startMinutes !== null && endMinutes !== null) {
                             duration = Math.max(0, endMinutes - startMinutes);
                         }
+                        const primaryTimestamp = raw.timestamp || raw.createdAt || raw.updatedAt;
+                        const timeHint = raw.startTime || raw.endTime || null;
+                        const workDay = getWorkDayFromTimestamp(primaryTimestamp) || getWorkDay(raw.date || '', timeHint);
                         return {
                             id,
                             date: raw.date || '',
@@ -1395,6 +1447,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             shift: normalizeShift(raw.shift ?? raw.turno),
                             startTime: raw.startTime || '',
                             endTime: raw.endTime || '',
+                            workDay: workDay || raw.date || '',
                             raw
                         };
                     }
@@ -1410,6 +1463,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         shift: normalizeShift(raw.shift ?? raw.turno),
                         product: raw.product || '',
                         mp: raw.mp || '',
+                        workDay: raw.date || '',
                         raw
                     })
                 }
@@ -1421,40 +1475,62 @@ document.addEventListener('DOMContentLoaded', function() {
                 return [];
             }
 
+            if (!startDate || !endDate) {
+                console.warn('[TRACE][getFilteredData] datas inválidas fornecidas', { startDate, endDate });
+                return [];
+            }
+
             let query = db.collection(config.collection);
             
-            console.log('[TRACE][getFilteredData] query setup', { 
+            // Buscar um período amplo (do dia anterior ao dia posterior)
+            // para capturar dados do turno 3 (23h-7h)
+            const startObj = new Date(startDate);
+            startObj.setDate(startObj.getDate() - 1);
+            const queryStartDate = Number.isNaN(startObj.getTime()) ? null : startObj.toISOString().split('T')[0];
+            
+            const endObj = new Date(endDate);
+            endObj.setDate(endObj.getDate() + 1);
+            const queryEndDate = Number.isNaN(endObj.getTime()) ? null : endObj.toISOString().split('T')[0];
+            
+            console.log('[TRACE][getFilteredData] query setup with expanded date range', { 
                 collection: config.collection,
                 dateField: config.dateField,
-                startDate, 
-                endDate,
+                userStartDate: startDate,
+                userEndDate: endDate,
+                queryStartDate,
+                queryEndDate,
                 machine,
                 shift
             });
             
-            if (startDate && endDate) {
-                query = query.where(config.dateField, '>=', startDate).where(config.dateField, '<=', endDate);
-                console.log('[TRACE][getFilteredData] applying date filter', { 
-                    collection: config.collection, 
-                    dateField: config.dateField,
-                    startDate, 
-                    endDate 
-                });
+            if (queryStartDate && queryEndDate) {
+                query = query.where(config.dateField, '>=', queryStartDate).where(config.dateField, '<=', queryEndDate);
             }
 
-            const snapshot = await query.get();
+            let snapshot = await query.get();
+
+            if (snapshot.empty && queryStartDate && queryEndDate) {
+                console.warn('[TRACE][getFilteredData] snapshot vazio com filtro de datas, reconsultando sem faixa para aplicar filtro no cliente');
+                snapshot = await db.collection(config.collection).get();
+            }
             console.log('[TRACE][getFilteredData] raw snapshot', { 
                 collection: config.collection,
                 size: snapshot.size,
-                empty: snapshot.empty,
-                allDocs: snapshot.docs.map(d => ({ 
-                    id: d.id, 
-                    [config.dateField]: d.data()[config.dateField],
-                    machine: d.data().machine,
-                    shift: d.data().turno || d.data().shift
-                }))
+                empty: snapshot.empty
             });
+            
             let data = snapshot.docs.map(doc => config.mapper(doc.id, doc.data()));
+
+            const startWorkDay = startDate || null;
+            const endWorkDay = endDate || null;
+
+            data = data.filter(item => {
+                const workDay = item.workDay || item.date;
+                if (!workDay) return false;
+                const meetsStart = !startWorkDay || workDay >= startWorkDay;
+                const meetsEnd = !endWorkDay || workDay <= endWorkDay;
+                return meetsStart && meetsEnd;
+            });
 
             if (collection === 'losses') {
                 data = data.filter(item => item.quantity > 0);
@@ -1490,11 +1566,22 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function calculateHoursInPeriod(startDate, endDate) {
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        const diffTime = Math.abs(end - start);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        return diffDays * 24; // Assumindo 24h por dia
+        if (!startDate || !endDate) return 0;
+
+        const start = new Date(`${startDate}T07:00:00`);
+        let end = new Date(`${endDate}T07:00:00`);
+
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+            return 0;
+        }
+
+        if (end <= start) {
+            end = new Date(start);
+            end.setDate(end.getDate() + 1);
+        }
+
+        const diffHours = (end - start) / (1000 * 60 * 60);
+        return Math.max(24, diffHours);
     }
 
     function showAnalysisLoading(show) {
@@ -1535,7 +1622,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function setAnalysisDefaultDates() {
-        const today = new Date().toISOString().split('T')[0];
+    const today = getProductionDateString();
         const startDateInput = document.getElementById('analysis-start-date');
         const endDateInput = document.getElementById('analysis-end-date');
         
@@ -1617,7 +1704,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: false,
+
                 plugins: {
                     legend: {
                         position: window.innerWidth < 768 ? 'bottom' : 'right',
@@ -1680,7 +1767,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: false,
+
                 scales: {
                     y: {
                         beginAtZero: false,
@@ -1792,19 +1879,44 @@ document.addEventListener('DOMContentLoaded', function() {
             data: {
                 labels: hours,
                 datasets: [{
-                    label: 'Produção',
+                    label: 'Peças',
                     data: hourlyData,
-                    backgroundColor: 'rgba(59, 130, 246, 0.8)',
-                    borderColor: '#3B82F6',
+                    backgroundColor: '#3B82F6',
+                    borderColor: '#1E40AF',
                     borderWidth: 1
                 }]
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: false,
                 scales: {
                     y: {
-                        beginAtZero: true
+                        beginAtZero: true,
+                        ticks: {
+                            font: {
+                                size: window.innerWidth < 768 ? 9 : 11
+                            }
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            font: {
+                                size: window.innerWidth < 768 ? 8 : 10
+                            },
+                            maxRotation: 45,
+                            minRotation: 45
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.parsed.y} pcs`;
+                            }
+                        }
                     }
                 }
             }
@@ -1835,22 +1947,46 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
         new Chart(ctx, {
-            type: 'doughnut',
+            type: 'bar',
             data: {
                 labels: shiftLabels,
                 datasets: [{
+                    label: 'Peças',
                     data: shiftData,
                     backgroundColor: ['#10B981', '#3B82F6', '#F59E0B'],
-                    borderWidth: 2,
-                    borderColor: '#ffffff'
+                    borderColor: ['#047857', '#1E40AF', '#D97706'],
+                    borderWidth: 1
                 }]
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            font: {
+                                size: window.innerWidth < 768 ? 9 : 11
+                            }
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            font: {
+                                size: window.innerWidth < 768 ? 9 : 11
+                            }
+                        }
+                    }
+                },
                 plugins: {
                     legend: {
-                        position: 'bottom'
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.parsed.y} pcs`;
+                            }
+                        }
                     }
                 }
             }
@@ -1950,7 +2086,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: false,
+
                 scales: {
                     y: {
                         type: 'linear',
@@ -2028,7 +2164,7 @@ document.addEventListener('DOMContentLoaded', function() {
             options: {
                 indexAxis: 'y',
                 responsive: true,
-                maintainAspectRatio: false,
+
                 scales: {
                     x: {
                         beginAtZero: true,
@@ -2113,7 +2249,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: false,
+
                 plugins: {
                     legend: {
                         position: isMobile ? 'bottom' : 'right',
@@ -2190,7 +2326,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: false,
+
                 scales: {
                     y: {
                         beginAtZero: true,
@@ -2266,7 +2402,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: false,
+
                 plugins: {
                     legend: {
                         position: isMobile ? 'bottom' : 'right',
@@ -2328,7 +2464,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: false,
+
                 scales: {
                     y: {
                         beginAtZero: true,
@@ -2404,7 +2540,7 @@ document.addEventListener('DOMContentLoaded', function() {
             options: {
                 indexAxis: 'y',
                 responsive: true,
-                maintainAspectRatio: false,
+
                 scales: {
                     x: {
                         beginAtZero: true,
@@ -2534,7 +2670,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: false,
+
                 scales: {
                     y: {
                         beginAtZero: true,
@@ -2732,7 +2868,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: false,
+
                 scales: {
                     y: {
                         beginAtZero: false,
@@ -4029,7 +4165,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: false,
+
                 scales: {
                     y: {
                         beginAtZero: true,
@@ -4111,12 +4247,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function setupActionButtons() {
-        // Botão de produção
-        const btnProduction = document.getElementById('btn-production');
-        if (btnProduction) {
-            btnProduction.addEventListener('click', openProductionModal);
-        }
-        
         // Botão de perdas
         const btnLosses = document.getElementById('btn-losses');
         if (btnLosses) {
@@ -5277,7 +5407,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 },
                 options: {
                     responsive: true,
-                    maintainAspectRatio: false,
+    
                     scales: {
                         y: {
                             beginAtZero: true,
@@ -6237,7 +6367,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: false,
+
                 scales: { y: { beginAtZero: true, title: { display: true, text: 'Quantidade de Peças' } } },
                 plugins: { 
                     legend: { position: 'top' },
@@ -6281,7 +6411,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: false,
+
                 scales: { y: { beginAtZero: true, max: 100, ticks: { callback: value => value + '%' } } },
                 plugins: { legend: { display: false } }
             }
@@ -6379,7 +6509,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 },
                 options: {
                     responsive: true,
-                    maintainAspectRatio: false,
+    
                     scales: {
                         y: {
                             beginAtZero: true,
