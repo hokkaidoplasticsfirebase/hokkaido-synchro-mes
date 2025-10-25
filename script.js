@@ -18,11 +18,18 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 
     let db;
+    let storage = null;
     try {
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
         }
         db = firebase.firestore();
+        if (typeof firebase.storage === 'function') {
+            storage = firebase.storage();
+            console.log('Firebase Storage inicializado com sucesso');
+        } else {
+            console.warn('Firebase Storage não disponível. Upload de fotos será desativado.');
+        }
         
         // Testar conexão com Firebase
         console.log('Firebase inicializado com sucesso');
@@ -149,6 +156,16 @@ document.addEventListener('DOMContentLoaded', function() {
     let allRecentEntries = []; // Armazenar todas as entradas para filtro
     let currentEntryFilter = 'all'; // Filtro atual: 'all', 'production', 'downtime', 'loss'
     let currentEditContext = null;
+
+    let cachedProductionDataset = {
+        productionData: [],
+        planData: [],
+        startDate: null,
+        endDate: null,
+        shift: 'all',
+        machine: 'all'
+    };
+    let productionRateMode = 'day';
 
     // Variáveis globais para análise
     let machines = [];
@@ -828,6 +845,24 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
 
+        const rateDayBtn = document.getElementById('production-rate-mode-day');
+        const rateShiftBtn = document.getElementById('production-rate-mode-shift');
+        if (rateDayBtn && rateShiftBtn) {
+            rateDayBtn.addEventListener('click', () => {
+                if (productionRateMode === 'day') return;
+                productionRateMode = 'day';
+                updateProductionRateToggle();
+                updateProductionRateDisplay();
+            });
+            rateShiftBtn.addEventListener('click', () => {
+                if (productionRateMode === 'shift') return;
+                productionRateMode = 'shift';
+                updateProductionRateToggle();
+                updateProductionRateDisplay();
+            });
+            updateProductionRateToggle();
+        }
+
         // Carregar dados iniciais
         loadAnalysisMachines();
         setAnalysisDefaultDates();
@@ -986,29 +1021,55 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
-        // Buscar dados do Firebase
-        const [productionData, lossesData, downtimeData] = await Promise.all([
-            getFilteredData('production', startDate, endDate, machine, shift),
-            getFilteredData('losses', startDate, endDate, machine, shift),
-            getFilteredData('downtime', startDate, endDate, machine, shift)
+        // Buscar dados do Firebase (sempre sem filtro de turno para permitir comparação geral)
+        const [productionAll, lossesAll, downtimeAll, planData] = await Promise.all([
+            getFilteredData('production', startDate, endDate, machine, 'all'),
+            getFilteredData('losses', startDate, endDate, machine, 'all'),
+            getFilteredData('downtime', startDate, endDate, machine, 'all'),
+            getFilteredData('plan', startDate, endDate, machine, 'all')
         ]);
 
         console.log('[TRACE][loadOverviewData] datasets received', {
-            productionCount: productionData.length,
-            lossesCount: lossesData.length,
-            downtimeCount: downtimeData.length,
-            productionSample: productionData.slice(0, 2),
-            lossesSample: lossesData.slice(0, 2),
-            downtimeSample: downtimeData.slice(0, 2)
+            productionCount: productionAll.length,
+            lossesCount: lossesAll.length,
+            downtimeCount: downtimeAll.length,
+            planCount: planData.length,
+            productionSample: productionAll.slice(0, 2),
+            lossesSample: lossesAll.slice(0, 2),
+            downtimeSample: downtimeAll.slice(0, 2)
         });
 
-        // Calcular KPIs
+        const normalizeShiftFilter = (value) => {
+            if (value === undefined || value === null || value === 'all') return 'all';
+            const num = Number(value);
+            return Number.isFinite(num) ? num : 'all';
+        };
+
+        const appliedShift = normalizeShiftFilter(shift);
+
+        const filterByShift = (data) => {
+            if (appliedShift === 'all') return data;
+            return data.filter(item => Number(item.shift || 0) === appliedShift);
+        };
+
+        const productionData = filterByShift(productionAll);
+        const lossesData = filterByShift(lossesAll);
+        const downtimeData = filterByShift(downtimeAll);
+
+        // Calcular KPIs básicos
         const totalProduction = productionData.reduce((sum, item) => sum + item.quantity, 0);
         const totalLosses = lossesData.reduce((sum, item) => sum + item.quantity, 0);
         const totalDowntime = downtimeData.reduce((sum, item) => sum + (item.duration || 0), 0);
         
-        // Calcular OEE simplificado (será melhorado depois)
-        const oee = totalProduction > 0 ? Math.min(100, (totalProduction / (totalProduction + totalLosses)) * 85) : 0;
+        // Calcular OEE real usando disponibilidade × performance × qualidade
+        const { overallOee, filteredOee } = calculateOverviewOEE(
+            productionAll,
+            lossesAll,
+            downtimeAll,
+            planData,
+            appliedShift
+        );
+        const displayedOee = appliedShift === 'all' ? overallOee : filteredOee;
         
         // Atualizar KPIs na interface
         const overviewOee = document.getElementById('overview-oee');
@@ -1016,13 +1077,20 @@ document.addEventListener('DOMContentLoaded', function() {
         const overviewLosses = document.getElementById('overview-losses');
         const overviewDowntime = document.getElementById('overview-downtime');
         
-        if (overviewOee) overviewOee.textContent = `${oee.toFixed(1)}%`;
+        if (overviewOee) {
+            if (appliedShift === 'all') {
+                overviewOee.textContent = `${(overallOee * 100).toFixed(1)}%`;
+            } else {
+                overviewOee.textContent = `Turno: ${(filteredOee * 100).toFixed(1)}% | Geral: ${(overallOee * 100).toFixed(1)}%`;
+            }
+        }
         if (overviewProduction) overviewProduction.textContent = totalProduction.toLocaleString();
-        if (overviewLosses) overviewLosses.textContent = totalLosses.toLocaleString();
+        if (overviewLosses) overviewLosses.textContent = totalLosses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         if (overviewDowntime) overviewDowntime.textContent = `${(totalDowntime / 60).toFixed(1)}h`;
 
         console.log('[TRACE][loadOverviewData] KPIs calculated', { 
-            oee: oee.toFixed(1), 
+            overallOee: (overallOee * 100).toFixed(1) + '%',
+            filteredOee: (filteredOee * 100).toFixed(1) + '%',
             totalProduction, 
             totalLosses, 
             totalDowntime 
@@ -1031,6 +1099,205 @@ document.addEventListener('DOMContentLoaded', function() {
         // Gerar gráficos
         await generateOEEDistributionChart(productionData, lossesData, downtimeData);
         await generateOEETrendChart(startDate, endDate);
+    }
+
+    function aggregateOeeMetrics(productionData, lossesData, downtimeData, planData, shiftFilter = 'all') {
+        const toShiftNumber = (value) => {
+            if (value === null || value === undefined) return null;
+            const num = Number(value);
+            return Number.isFinite(num) && num > 0 ? num : null;
+        };
+
+        const determineShiftFromTime = (timeStr) => {
+            if (!timeStr || typeof timeStr !== 'string') return null;
+            const [hoursStr, minutesStr] = timeStr.split(':');
+            const hours = Number(hoursStr);
+            if (!Number.isFinite(hours)) return null;
+            if (hours >= 7 && hours < 15) return 1;
+            if (hours >= 15 && hours < 23) return 2;
+            return 3;
+        };
+
+        const determineShiftFromDate = (dateObj) => {
+            if (!(dateObj instanceof Date) || Number.isNaN(dateObj.getTime())) return null;
+            const hours = dateObj.getHours();
+            return determineShiftFromTime(`${String(hours).padStart(2, '0')}:00`);
+        };
+
+        const inferShift = (item) => {
+            const candidates = [
+                item.shift,
+                item?.raw?.shift,
+                item?.raw?.turno,
+                item?.raw?.Shift,
+                item?.raw?.Turno
+            ];
+            for (const value of candidates) {
+                const shiftNum = toShiftNumber(value);
+                if (shiftNum) return shiftNum;
+            }
+
+            const timeCandidates = [
+                item.startTime,
+                item.endTime,
+                item?.raw?.startTime,
+                item?.raw?.endTime,
+                item?.raw?.hora,
+                item?.raw?.hour,
+                item?.raw?.time
+            ];
+            for (const time of timeCandidates) {
+                const shiftNum = determineShiftFromTime(time);
+                if (shiftNum) return shiftNum;
+            }
+
+            const dateCandidates = [];
+            if (item.datetime) {
+                const parsed = new Date(item.datetime);
+                if (!Number.isNaN(parsed.getTime())) dateCandidates.push(parsed);
+            }
+            if (item?.raw?.timestamp?.toDate) {
+                dateCandidates.push(item.raw.timestamp.toDate());
+            }
+            if (item?.raw?.createdAt?.toDate) {
+                dateCandidates.push(item.raw.createdAt.toDate());
+            }
+            if (item?.raw?.updatedAt?.toDate) {
+                dateCandidates.push(item.raw.updatedAt.toDate());
+            }
+            for (const date of dateCandidates) {
+                const shiftNum = determineShiftFromDate(date);
+                if (shiftNum) return shiftNum;
+            }
+
+            return null;
+        };
+
+        const inferMachine = (item) => item.machine || item?.raw?.machine || item?.raw?.machineRef || item?.raw?.machine_id || null;
+
+        const groupKey = (machine, shift) => `${machine || 'unknown'}_${shift ?? 'none'}`;
+        const grouped = {};
+
+        const getOrCreateGroup = (item) => {
+            const machine = inferMachine(item);
+            const shiftNum = inferShift(item);
+            if (!machine || !shiftNum) return null;
+            const key = groupKey(machine, shiftNum);
+            if (!grouped[key]) {
+                grouped[key] = {
+                    machine,
+                    shift: shiftNum,
+                    production: 0,
+                    lossesKg: 0,
+                    downtimeMin: 0
+                };
+            }
+            return grouped[key];
+        };
+
+        productionData.forEach(item => {
+            const group = getOrCreateGroup(item);
+            if (!group) return;
+            group.production += item.quantity || 0;
+        });
+
+        lossesData.forEach(item => {
+            const group = getOrCreateGroup(item);
+            if (!group) return;
+            group.lossesKg += item.quantity || 0;
+        });
+
+        downtimeData.forEach(item => {
+            const group = getOrCreateGroup(item);
+            if (!group) return;
+            group.downtimeMin += item.duration || 0;
+        });
+
+        const clamp01 = (value) => Math.max(0, Math.min(1, value));
+        const groupsWithMetrics = [];
+
+        Object.values(grouped).forEach(group => {
+            const planCandidates = planData.filter(p => p && p.raw && p.machine === group.machine);
+            if (!planCandidates.length) return;
+
+            const plan = planCandidates.find(p => {
+                const planShift = Number(p.shift || 0);
+                return planShift && planShift === group.shift;
+            }) || planCandidates[0];
+
+            if (!plan || !plan.raw) return;
+
+            const shiftKey = `t${group.shift}`;
+            const cicloReal = plan.raw[`real_cycle_${shiftKey}`] || plan.raw.budgeted_cycle || 0;
+            const cavAtivas = plan.raw[`active_cavities_${shiftKey}`] || plan.raw.mold_cavities || 0;
+            const pieceWeight = plan.raw.piece_weight || 0;
+
+            const refugoPcs = pieceWeight > 0 ? Math.round((group.lossesKg * 1000) / pieceWeight) : 0;
+
+            const metrics = calculateShiftOEE(
+                group.production,
+                group.downtimeMin,
+                refugoPcs,
+                cicloReal,
+                cavAtivas
+            );
+
+            groupsWithMetrics.push({
+                machine: group.machine,
+                shift: group.shift,
+                disponibilidade: clamp01(metrics.disponibilidade),
+                performance: clamp01(metrics.performance),
+                qualidade: clamp01(metrics.qualidade),
+                oee: clamp01(metrics.oee)
+            });
+        });
+
+        const averageMetric = (items, selector) => {
+            if (!items.length) return 0;
+            const total = items.reduce((sum, item) => sum + selector(item), 0);
+            return total / items.length;
+        };
+
+        const normalizedShift = shiftFilter === 'all' ? 'all' : toShiftNumber(shiftFilter);
+        const filteredGroups = normalizedShift === 'all'
+            ? groupsWithMetrics
+            : groupsWithMetrics.filter(item => item.shift === normalizedShift);
+
+        const overall = {
+            disponibilidade: averageMetric(groupsWithMetrics, item => item.disponibilidade),
+            performance: averageMetric(groupsWithMetrics, item => item.performance),
+            qualidade: averageMetric(groupsWithMetrics, item => item.qualidade),
+            oee: averageMetric(groupsWithMetrics, item => item.oee)
+        };
+
+        const filtered = {
+            disponibilidade: averageMetric(filteredGroups, item => item.disponibilidade),
+            performance: averageMetric(filteredGroups, item => item.performance),
+            qualidade: averageMetric(filteredGroups, item => item.qualidade),
+            oee: averageMetric(filteredGroups, item => item.oee)
+        };
+
+        return {
+            overall,
+            filtered,
+            groups: groupsWithMetrics
+        };
+    }
+
+    // Função para calcular OEE real do overview agregando todos os turnos/máquinas
+    function calculateOverviewOEE(productionData, lossesData, downtimeData, planData, shiftFilter = 'all') {
+        const { overall, filtered } = aggregateOeeMetrics(
+            productionData,
+            lossesData,
+            downtimeData,
+            planData,
+            shiftFilter
+        );
+
+        return {
+            overallOee: overall.oee,
+            filteredOee: filtered.oee
+        };
     }
 
     // Função para carregar análise de produção
@@ -1051,10 +1318,6 @@ document.addEventListener('DOMContentLoaded', function() {
         const totalPlan = planData.reduce((sum, item) => sum + item.quantity, 0);
         const targetVsActual = totalPlan > 0 ? (totalProduction / totalPlan * 100) : 0;
         
-        // Calcular taxa de produção (peças/hora)
-        const hoursInPeriod = calculateHoursInPeriod(startDate, endDate);
-        const productionRate = hoursInPeriod > 0 ? (totalProduction / hoursInPeriod) : 0;
-        
         // Encontrar máquina top
         const machineProduction = {};
         productionData.forEach(item => {
@@ -1064,15 +1327,159 @@ document.addEventListener('DOMContentLoaded', function() {
             machineProduction[a] > machineProduction[b] ? a : b, '---'
         );
 
+        cachedProductionDataset = {
+            productionData,
+            planData,
+            startDate,
+            endDate,
+            shift,
+            machine
+        };
+
         // Atualizar interface
         document.getElementById('production-target-vs-actual').textContent = `${targetVsActual.toFixed(1)}%`;
-        document.getElementById('production-rate').textContent = `${productionRate.toFixed(0)} pcs/h`;
         document.getElementById('top-machine').textContent = topMachine;
+        updateProductionRateDisplay();
 
         // Gerar gráficos
         await generateHourlyProductionChart(productionData);
         await generateShiftProductionChart(productionData);
         // await generateMachineProductionTimeline(productionData); // TODO: implementar
+    }
+
+    function updateProductionRateToggle() {
+        const dayBtn = document.getElementById('production-rate-mode-day');
+        const shiftBtn = document.getElementById('production-rate-mode-shift');
+        if (!dayBtn || !shiftBtn) return;
+
+        const applyState = (btn, isActive) => {
+            btn.classList.remove('bg-green-600', 'text-white', 'bg-white', 'text-green-600', 'hover:bg-green-50');
+            if (isActive) {
+                btn.classList.add('bg-green-600', 'text-white');
+            } else {
+                btn.classList.add('bg-white', 'text-green-600', 'hover:bg-green-50');
+            }
+        };
+
+        applyState(dayBtn, productionRateMode === 'day');
+        applyState(shiftBtn, productionRateMode === 'shift');
+    }
+
+    function updateProductionRateDisplay() {
+        const valueEl = document.getElementById('production-rate-value');
+        const subtextEl = document.getElementById('production-rate-subtext');
+        if (!valueEl) return;
+
+        const dataset = cachedProductionDataset || {};
+        const productionData = dataset.productionData || [];
+        const startDate = dataset.startDate;
+        const endDate = dataset.endDate;
+        const shiftFilterRaw = dataset.shift;
+        const shiftFilter = shiftFilterRaw != null ? String(shiftFilterRaw) : 'all';
+
+        if (!productionData.length) {
+            valueEl.textContent = '--- pcs/h';
+            if (subtextEl) {
+                const modeLabel = productionRateMode === 'shift' ? 'Modo turno' : 'Modo dia';
+                subtextEl.textContent = `${modeLabel} • Sem registros no período selecionado.`;
+            }
+            return;
+        }
+
+        const totalProduction = productionData.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+        const workDaysSet = new Set(productionData.map(item => item.workDay || item.date).filter(Boolean));
+        const workDaysCount = workDaysSet.size;
+
+        let effectiveDays = workDaysCount;
+        if (!effectiveDays) {
+            if (startDate && endDate) {
+                const baseStart = new Date(`${startDate}T00:00:00`);
+                const baseEnd = new Date(`${endDate}T00:00:00`);
+                const diffDays = Math.max(Math.round((baseEnd - baseStart) / (1000 * 60 * 60 * 24)) + 1, 1);
+                effectiveDays = diffDays;
+            } else {
+                effectiveDays = 1;
+            }
+        }
+
+        if (productionRateMode === 'day') {
+            let hoursInPeriod = 0;
+            if (startDate && endDate) {
+                hoursInPeriod = calculateHoursInPeriod(startDate, endDate);
+            }
+            if (!hoursInPeriod) {
+                hoursInPeriod = effectiveDays * 24;
+            }
+
+            const rate = hoursInPeriod > 0 ? totalProduction / hoursInPeriod : 0;
+            valueEl.textContent = `${rate.toFixed(1)} pcs/h`;
+
+            if (subtextEl) {
+                const daysLabel = effectiveDays > 1 ? `${effectiveDays} dias` : '1 dia';
+                const dataDaysLabel = workDaysCount && workDaysCount !== effectiveDays ? `, ${workDaysCount} com lançamentos` : '';
+                subtextEl.textContent = `Modo dia • ${totalProduction.toLocaleString('pt-BR')} peças em ${daysLabel}${dataDaysLabel}.`;
+            }
+            return;
+        }
+
+        const hoursPerShift = 8;
+        const denominator = Math.max(effectiveDays * hoursPerShift, 1);
+        const shiftTotals = { '1': 0, '2': 0, '3': 0 };
+        let unknownTotal = 0;
+
+        productionData.forEach(item => {
+            const shiftValue = item.shift;
+            const normalizedShift = shiftValue != null ? String(shiftValue) : null;
+            const qty = Number(item.quantity) || 0;
+            if (normalizedShift && Object.prototype.hasOwnProperty.call(shiftTotals, normalizedShift)) {
+                shiftTotals[normalizedShift] += qty;
+            } else {
+                unknownTotal += qty;
+            }
+        });
+
+        const shiftRates = ['1', '2', '3'].map(shiftKey => {
+            const total = shiftTotals[shiftKey] || 0;
+            const rate = total > 0 ? total / denominator : 0;
+            return { shift: shiftKey, total, rate };
+        });
+
+        const selectedShift = shiftFilter !== 'all' ? shiftFilter : 'all';
+
+        if (selectedShift !== 'all' && ['1', '2', '3'].includes(selectedShift)) {
+            const selectedData = shiftRates.find(r => r.shift === selectedShift);
+            if (selectedData && selectedData.total > 0) {
+                valueEl.textContent = `Turno ${selectedData.shift}: ${selectedData.rate.toFixed(1)} pcs/h`;
+            } else {
+                valueEl.textContent = `Turno ${selectedShift}: -- pcs/h`;
+            }
+        } else {
+            const bestShift = shiftRates.reduce((best, current) => {
+                if (current.total <= 0) return best;
+                if (!best || current.rate > best.rate) {
+                    return current;
+                }
+                return best;
+            }, null);
+
+            if (bestShift) {
+                valueEl.textContent = `Melhor turno: T${bestShift.shift} ${bestShift.rate.toFixed(1)} pcs/h`;
+            } else {
+                valueEl.textContent = 'Sem dados por turno';
+            }
+        }
+
+        if (subtextEl) {
+            const detailParts = shiftRates.map(r => {
+                const label = `T${r.shift}`;
+                return r.total > 0 ? `${label}: ${r.rate.toFixed(1)} pcs/h` : `${label}: --`;
+            });
+            if (unknownTotal > 0) {
+                detailParts.push(`Sem turno: ${unknownTotal.toLocaleString('pt-BR')} pcs`);
+            }
+            const daysLabel = effectiveDays > 1 ? `${effectiveDays} dias` : '1 dia';
+            subtextEl.textContent = `Modo turno • ${detailParts.join(' • ')} • ${daysLabel} analisado(s).`;
+        }
     }
 
     // Função para carregar análise de eficiência
@@ -2582,36 +2989,25 @@ document.addEventListener('DOMContentLoaded', function() {
     async function calculateDetailedOEE(startDate, endDate, machine, shift) {
         try {
             const [productionData, lossesData, downtimeData, planData] = await Promise.all([
-                getFilteredData('production', startDate, endDate, machine, shift),
-                getFilteredData('losses', startDate, endDate, machine, shift),
-                getFilteredData('downtime', startDate, endDate, machine, shift),
-                getFilteredData('plan', startDate, endDate, machine, shift)
+                getFilteredData('production', startDate, endDate, machine, 'all'),
+                getFilteredData('losses', startDate, endDate, machine, 'all'),
+                getFilteredData('downtime', startDate, endDate, machine, 'all'),
+                getFilteredData('plan', startDate, endDate, machine, 'all')
             ]);
 
-            const totalProduced = productionData.reduce((sum, item) => sum + item.quantity, 0);
-            const totalLosses = lossesData.reduce((sum, item) => sum + item.quantity, 0);
-            const totalDowntime = downtimeData.reduce((sum, item) => sum + (item.duration || 0), 0);
-            const totalPlanned = planData.reduce((sum, item) => sum + item.quantity, 0);
-
-            // Calcular disponibilidade (assumindo 8h de trabalho por dia)
-            const hoursInPeriod = calculateHoursInPeriod(startDate, endDate);
-            const plannedMinutes = hoursInPeriod * 60;
-            const availability = plannedMinutes > 0 ? Math.max(0, ((plannedMinutes - totalDowntime) / plannedMinutes) * 100) : 100;
-
-            // Calcular performance
-            const performance = totalPlanned > 0 ? (totalProduced / totalPlanned) * 100 : 100;
-
-            // Calcular qualidade
-            const quality = totalProduced > 0 ? ((totalProduced - totalLosses) / totalProduced) * 100 : 100;
-
-            // OEE geral
-            const oee = (availability * performance * quality) / 10000;
+            const { filtered } = aggregateOeeMetrics(
+                productionData,
+                lossesData,
+                downtimeData,
+                planData,
+                shift
+            );
 
             return {
-                availability: Math.min(100, availability),
-                performance: Math.min(100, performance),
-                quality: Math.min(100, quality),
-                oee: Math.min(100, oee)
+                availability: (filtered.disponibilidade * 100),
+                performance: (filtered.performance * 100),
+                quality: (filtered.qualidade * 100),
+                oee: (filtered.oee * 100)
             };
         } catch (error) {
             console.error('Erro ao calcular OEE detalhado:', error);
@@ -4300,6 +4696,53 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!modal) return;
         modal.classList.remove('hidden');
     }
+
+    async function uploadEvidencePhoto(file, folder = 'evidences') {
+        if (!file) {
+            return { url: null, path: null };
+        }
+
+        if (!storage) {
+            throw new Error('storage-not-configured');
+        }
+
+        const baseFolder = folder
+            .replace(/^\/+/g, '')
+            .replace(/\/+$/g, '')
+            .replace(/^\.+/, '')
+            .replace(/\\+/g, '/');
+        const sanitizedFolder = (baseFolder || 'evidences').replace(/\s+/g, '_');
+        const inferredExt = (file.type && file.type.split('/')[1]) || (file.name.split('.').pop() || 'jpg');
+        const extension = (inferredExt || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+        const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        const storagePath = `${sanitizedFolder}/${uniqueSuffix}.${extension}`;
+        const metadata = { contentType: file.type || 'image/jpeg' };
+
+        console.log('[TRACE][uploadEvidencePhoto] iniciando upload', { storagePath, contentType: metadata.contentType });
+
+        const snapshot = await storage.ref().child(storagePath).put(file, metadata);
+        const downloadURL = await snapshot.ref.getDownloadURL();
+
+        console.log('[TRACE][uploadEvidencePhoto] upload concluído', { storagePath, downloadURL });
+        return { url: downloadURL, path: storagePath };
+    }
+
+    async function deleteEvidencePhoto(storagePath) {
+        if (!storagePath || !storage) {
+            return;
+        }
+
+        try {
+            console.log('[TRACE][deleteEvidencePhoto] removendo arquivo antigo', { storagePath });
+            await storage.ref().child(storagePath).delete();
+        } catch (error) {
+            if (error?.code === 'storage/object-not-found') {
+                console.warn('[TRACE][deleteEvidencePhoto] arquivo já inexistente', storagePath);
+            } else {
+                console.warn('[TRACE][deleteEvidencePhoto] falha ao remover arquivo', { storagePath, error });
+            }
+        }
+    }
     
     // Função para toggle de parada (stop/start)
     function toggleDowntime() {
@@ -4458,6 +4901,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const weight = parseFloat(weightInput.value) || 0;
         const reason = document.getElementById('quick-losses-reason').value;
         const obs = (document.getElementById('quick-losses-obs').value || '').trim();
+        const lossesPhotoInput = document.getElementById('quick-losses-photo');
+        const lossesPhotoFile = lossesPhotoInput?.files?.[0] || null;
 
         console.log('[TRACE][handleLossesSubmit] parsed form values', { quantity, weight, reason, obs });
 
@@ -4511,6 +4956,30 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
+        let photoUrl = isEditing ? (originalData?.photoUrl || null) : null;
+        let photoStoragePath = isEditing ? (originalData?.photoStoragePath || null) : null;
+
+        if (lossesPhotoFile) {
+            try {
+                const uploadResult = await uploadEvidencePhoto(lossesPhotoFile, `losses/${planId}`);
+                if (uploadResult?.url) {
+                    if (photoStoragePath && photoStoragePath !== uploadResult.path) {
+                        await deleteEvidencePhoto(photoStoragePath);
+                    }
+                    photoUrl = uploadResult.url;
+                    photoStoragePath = uploadResult.path;
+                }
+            } catch (error) {
+                console.error('Erro ao enviar foto da perda:', error);
+                if (error?.message === 'storage-not-configured') {
+                    alert('Não foi possível salvar a foto porque o armazenamento não está configurado.');
+                } else {
+                    alert('Erro ao enviar a foto. O registro não foi salvo.');
+                }
+                return;
+            }
+        }
+
         const currentShift = getCurrentShift();
         const turno = isEditing ? (originalData?.turno || currentShift) : currentShift;
         const dataReferencia = isEditing ? (originalData?.data || getProductionDateString()) : getProductionDateString();
@@ -4528,7 +4997,9 @@ document.addEventListener('DOMContentLoaded', function() {
             perdas: reason,
             observacoes: obs,
             machine: machineRef || null,
-            mp: mpValue
+            mp: mpValue,
+            photoUrl: photoUrl || null,
+            photoStoragePath: photoStoragePath || null
         };
 
         console.log('[TRACE][handleLossesSubmit] payloadBase prepared', payloadBase);
@@ -4578,6 +5049,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const reason = document.getElementById('quick-downtime-reason').value;
         const obs = (document.getElementById('quick-downtime-obs').value || '').trim();
+        const downtimePhotoInput = document.getElementById('quick-downtime-photo');
+        const downtimePhotoFile = downtimePhotoInput?.files?.[0] || null;
         
         console.log('[TRACE][handleDowntimeSubmit] parsed form values', { reason, obs });
 
@@ -4596,6 +5069,25 @@ document.addEventListener('DOMContentLoaded', function() {
             const now = new Date();
             const endTime = now.toTimeString().substr(0, 5);
             
+            let photoUrl = null;
+            let photoStoragePath = null;
+            if (downtimePhotoFile) {
+                try {
+                    const folder = `downtime/${currentDowntimeStart.machine || 'geral'}`;
+                    const uploadResult = await uploadEvidencePhoto(downtimePhotoFile, folder);
+                    photoUrl = uploadResult?.url || null;
+                    photoStoragePath = uploadResult?.path || null;
+                } catch (error) {
+                    console.error('Erro ao enviar foto da parada:', error);
+                    if (error?.message === 'storage-not-configured') {
+                        alert('Não foi possível salvar a foto porque o armazenamento não está configurado.');
+                    } else {
+                        alert('Erro ao enviar a foto. O registro não foi salvo.');
+                    }
+                    return;
+                }
+            }
+
             // Calcular duração
             const startMinutes = parseTimeToMinutes(currentDowntimeStart.date, currentDowntimeStart.startTime) || 0;
             const endMinutes = parseTimeToMinutes(currentDowntimeStart.date, endTime) || startMinutes;
@@ -4609,7 +5101,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 duration: durationMinutes,
                 reason: reason,
                 observations: obs,
-                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                photoUrl,
+                photoStoragePath
             };
 
             console.log('[TRACE][handleDowntimeSubmit] persistence payload', downtimeData);
@@ -4651,6 +5145,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const endTime = document.getElementById('manual-downtime-end').value;
         const reason = document.getElementById('manual-downtime-reason').value;
         const obs = (document.getElementById('manual-downtime-obs').value || '').trim();
+        const manualDowntimePhotoInput = document.getElementById('manual-downtime-photo');
+        const manualDowntimePhotoFile = manualDowntimePhotoInput?.files?.[0] || null;
         
         console.log('[TRACE][handleManualDowntimeSubmit] parsed form values', { startTime, endTime, reason, obs });
 
@@ -4683,6 +5179,25 @@ document.addEventListener('DOMContentLoaded', function() {
             const endMinutes = parseTimeToMinutes(date, endTime) || startMinutes;
             const durationMinutes = Math.max(1, endMinutes - startMinutes);
 
+            let photoUrl = null;
+            let photoStoragePath = null;
+            if (manualDowntimePhotoFile) {
+                try {
+                    const folder = `downtime/${selectedMachineData.machine || 'manual'}`;
+                    const uploadResult = await uploadEvidencePhoto(manualDowntimePhotoFile, folder);
+                    photoUrl = uploadResult?.url || null;
+                    photoStoragePath = uploadResult?.path || null;
+                } catch (error) {
+                    console.error('Erro ao enviar foto da parada manual:', error);
+                    if (error?.message === 'storage-not-configured') {
+                        alert('Não foi possível salvar a foto porque o armazenamento não está configurado.');
+                    } else {
+                        alert('Erro ao enviar a foto. O registro não foi salvo.');
+                    }
+                    return;
+                }
+            }
+
             const downtimeData = {
                 machine: selectedMachineData.machine,
                 date: date,
@@ -4691,7 +5206,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 duration: durationMinutes,
                 reason: reason,
                 observations: obs,
-                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                photoUrl,
+                photoStoragePath
             };
 
             console.log('[TRACE][handleManualDowntimeSubmit] persistence payload', downtimeData);
