@@ -56,12 +56,6 @@
                 <a href="#" class="nav-btn" data-page="lancamento">
                     <i data-lucide="keyboard"></i><span>Lançamento</span>
                 </a>
-                <a href="#" class="nav-btn" data-page="melhoria">
-                    <i data-lucide="siren"></i><span>Melhoria Contínua</span>
-                </a>
-                <a href="#" class="nav-btn" data-page="parada">
-                    <i data-lucide="wrench"></i><span>Parada de Máquina</span>
-                </a>
                 <a href="#" class="nav-btn" data-page="analise">
                     <i data-lucide="area-chart"></i><span>Análise</span>
                 </a>
@@ -77,7 +71,13 @@
                     </button>
                     <h2 id="page-title" class="text-xl font-semibold text-text-dark ml-2">Planejamento</h2>
                  </div>
-                 <img src="https://i.postimg.cc/wMZh3m85/Gemini-Generated-Image-gdpgb8gdpgb8gdpg-removebg-preview.png" alt="Logo Hokkaido Synchro" class="h-16">
+                 <div class="flex items-center gap-4">
+                    <button id="firebase-test-btn" class="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 flex items-center gap-1">
+                        <i data-lucide="database" class="w-4 h-4"></i>
+                        Testar Firebase
+                    </button>
+                    <img src="https://i.postimg.cc/wMZh3m85/Gemini-Generated-Image-gdpgb8gdpgb8gdpg-removebg-preview.png" alt="Logo Hokkaido Synchro" class="h-16">
+                 </div>
             </header>
 
             <div class="flex-1 overflow-y-auto p-2 sm:p-6">
@@ -100,6 +100,27 @@
                                     <option value="">Selecione...</option>
                                 </select>
                                 <div id="product-name-display" class="mt-2 p-2 bg-gray-50 rounded-md text-sm font-medium text-primary-blue" style="display: none;"></div>
+                            </div>
+                            <div>
+                                <label for="planning-mp" class="block text-sm font-medium text-gray-700">Matéria-prima (MP)</label>
+                                <input type="text" id="planning-mp" name="mp" required placeholder="Informe ou confirme a MP" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm">
+                            </div>
+                            <div>
+                                <label for="planning-mp-type" class="block text-sm font-medium text-gray-700">Tipo de Matéria-prima</label>
+                                <select id="planning-mp-type" name="mp_type" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm">
+                                    <option value="">Selecione o tipo...</option>
+                                    <option value="PP">PP - Polipropileno</option>
+                                    <option value="PE">PE - Polietileno</option>
+                                    <option value="PET">PET - Polietileno Tereftalato</option>
+                                    <option value="PS">PS - Poliestireno</option>
+                                    <option value="PVC">PVC - Policloreto de Vinila</option>
+                                    <option value="ABS">ABS - Acrilonitrila Butadieno Estireno</option>
+                                    <option value="PC">PC - Policarbonato</option>
+                                    <option value="PA">PA - Poliamida (Nylon)</option>
+                                    <option value="PEAD">PEAD - Polietileno de Alta Densidade</option>
+                                    <option value="PEBD">PEBD - Polietileno de Baixa Densidade</option>
+                                    <option value="Outros">Outros</option>
+                                </select>
                             </div>
                             <div class="grid grid-cols-3 gap-4">
                                 <div>
@@ -143,6 +164,7 @@
                                     <tr>
                                         <th rowspan="2" class="px-2 py-2 text-left text-xs font-medium uppercase align-middle border">Máq.</th>
                                         <th rowspan="2" class="px-2 py-2 text-left text-xs font-medium uppercase align-middle border">Produto</th>
+                                        <th rowspan="2" class="px-2 py-2 text-left text-xs font-medium uppercase align-middle border">MP</th>
                                         <th colspan="3" class="px-2 py-2 text-center text-xs font-medium uppercase border">Planeado</th>
                                         <th colspan="3" class="px-2 py-2 text-center text-xs font-medium uppercase border bg-blue-100">1º Turno</th>
                                         <th colspan="3" class="px-2 py-2 text-center text-xs font-medium uppercase border bg-yellow-100">2º Turno</th>
@@ -173,178 +195,656 @@
                 </div>
 
                 <!-- PÁGINA: Lançamento -->
-                <div id="lancamento-page" class="page-content hidden">
-                    <main class="bg-white p-6 md:p-8 rounded-lg shadow-lg border-t-4 border-primary-blue">
-                        <h2 class="text-2xl font-bold mb-4 flex items-center gap-2"><i data-lucide="keyboard" class="text-primary-blue"></i>Painel de Lançamento do Operador</h2>
-                        <div id="launch-panel-container" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"></div>
-                        <div id="launch-panel-loading" class="text-center py-10"><i data-lucide="loader-2" class="w-12 h-12 animate-spin text-primary-blue mx-auto"></i></div>
-                        <div id="launch-panel-no-data" class="text-center py-10 text-gray-500" style="display: none;"><p>Nenhum item planejado para hoje.</p></div>
-                    </main>
+                <div id="lancamento-page" class="page-content hidden space-y-4 md:space-y-6">
+                    <!-- Seletor de Máquina -->
+                    <div class="bg-gradient-to-r from-blue-500 to-blue-600 p-4 md:p-6 rounded-xl shadow-lg text-white">
+                        <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                            <div>
+                                <h2 class="text-xl md:text-2xl font-bold flex items-center gap-2 md:gap-3">
+                                    <i data-lucide="monitor" class="w-6 h-6 md:w-8 md:h-8"></i>
+                                    <span class="text-base md:text-2xl">Painel de Controle de Produção</span>
+                                </h2>
+                                <p class="text-blue-100 mt-1 text-xs md:text-sm">Selecione uma máquina para iniciar o controle em tempo real</p>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <div class="text-right">
+                                    <p class="text-xs md:text-sm text-blue-100">Turno Atual</p>
+                                    <p id="current-shift-display" class="text-lg md:text-xl font-bold">T1</p>
+                                </div>
+                                <div class="w-10 h-10 md:w-12 md:h-12 bg-white/20 rounded-full flex items-center justify-center">
+                                    <i data-lucide="clock" class="w-5 h-5 md:w-6 md:h-6"></i>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-4">
+                            <select id="machine-selector" class="w-full p-2 md:p-3 rounded-lg bg-white text-gray-800 font-medium shadow-md text-sm md:text-base">
+                                <option value="">Selecione uma máquina...</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Painel Principal (hidden por padrão) -->
+                    <div id="production-control-panel" class="hidden space-y-4 md:space-y-6">
+                        
+                        <!-- Info da Máquina e Produto -->
+                        <div class="bg-white p-4 md:p-6 rounded-xl shadow-lg border-l-4 border-blue-500">
+                            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                <div class="flex items-center gap-3 md:gap-4">
+                                    <div class="w-12 h-12 md:w-16 md:h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-base md:text-xl" id="machine-icon">
+                                        H-01
+                                    </div>
+                                    <div>
+                                        <h3 class="text-base md:text-xl font-bold text-gray-800" id="machine-name">Máquina H-01</h3>
+                                        <p class="text-sm md:text-base text-gray-600" id="product-name">Produto não selecionado</p>
+                                        <p class="text-xs md:text-sm text-gray-500" id="product-mp">Matéria-prima não definida</p>
+                                        <div class="flex items-center gap-2 mt-1">
+                                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                <div class="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
+                                                Em Produção
+                                            </span>
+                                            <span class="text-xs md:text-sm text-gray-500" id="production-time">00:00:00</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="text-right w-full sm:w-auto">
+                                    <p class="text-xs md:text-sm text-gray-500">Meta do Turno</p>
+                                    <p class="text-xl md:text-2xl font-bold text-blue-600" id="shift-target">0</p>
+                                    <p class="text-xs md:text-sm text-gray-500">peças</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Gráfico de Produção por Hora -->
+                        <div class="bg-white p-4 md:p-6 rounded-xl shadow-lg">
+                            <div class="mb-4 md:mb-6">
+                                <h3 class="text-base md:text-lg font-bold text-gray-800 mb-2">Produção por Hora - Planejado vs Executado</h3>
+                                <div class="flex flex-wrap items-center gap-2 md:gap-4 text-xs md:text-sm">
+                                    <div class="flex items-center gap-1 md:gap-2">
+                                        <div class="w-2 h-2 md:w-3 md:h-3 bg-blue-500 rounded"></div>
+                                        <span class="text-gray-600">Planejado</span>
+                                    </div>
+                                    <div class="flex items-center gap-1 md:gap-2">
+                                        <div class="w-2 h-2 md:w-3 md:h-3 bg-green-500 rounded"></div>
+                                        <span class="text-gray-600">Executado</span>
+                                    </div>
+                                    <div class="flex items-center gap-1 md:gap-2">
+                                        <div class="w-2 h-2 md:w-3 md:h-3 bg-red-500 rounded"></div>
+                                        <span class="text-gray-600">Meta Acumulada</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="relative h-64 md:h-80">
+                                <canvas id="hourly-production-chart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Botões de Ação -->
+                        <div class="bg-white p-4 md:p-6 rounded-xl shadow-lg">
+                            <h3 class="text-base md:text-lg font-bold text-gray-800 mb-4">Ações Rápidas</h3>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+                                
+                                <!-- Botão de Produção -->
+                                <button id="btn-production" class="group relative bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white p-4 md:p-6 rounded-xl shadow-lg transform hover:scale-105 transition-all duration-200">
+                                    <div class="flex flex-col items-center space-y-2 md:space-y-3">
+                                        <div class="w-12 h-12 md:w-14 md:h-14 bg-white/20 rounded-full flex items-center justify-center group-hover:bg-white/30 transition-colors">
+                                            <i data-lucide="package-plus" class="w-6 h-6 md:w-7 md:h-7"></i>
+                                        </div>
+                                        <div class="text-center">
+                                            <h4 class="font-bold text-base md:text-lg">Lançar Produção</h4>
+                                            <p class="text-green-100 text-xs md:text-sm">Registrar peças produzidas</p>
+                                        </div>
+                                    </div>
+                                    <div class="absolute top-2 right-2 w-2 h-2 md:w-3 md:h-3 bg-green-300 rounded-full animate-pulse"></div>
+                                </button>
+
+                                <!-- Botão de Perdas -->
+                                <button id="btn-losses" class="group relative bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white p-4 md:p-6 rounded-xl shadow-lg transform hover:scale-105 transition-all duration-200">
+                                    <div class="flex flex-col items-center space-y-2 md:space-y-3">
+                                        <div class="w-12 h-12 md:w-14 md:h-14 bg-white/20 rounded-full flex items-center justify-center group-hover:bg-white/30 transition-colors">
+                                            <i data-lucide="alert-triangle" class="w-6 h-6 md:w-7 md:h-7"></i>
+                                        </div>
+                                        <div class="text-center">
+                                            <h4 class="font-bold text-base md:text-lg">Registrar Perdas</h4>
+                                            <p class="text-orange-100 text-sm">Apontar refugos e perdas</p>
+                                        </div>
+                                    </div>
+                                </button>
+
+                                <!-- Botão Start/Stop Paradas -->
+                                <button id="btn-downtime" class="group relative bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white p-6 rounded-xl shadow-lg transform hover:scale-105 transition-all duration-200">
+                                    <div class="flex flex-col items-center space-y-3">
+                                        <div class="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center group-hover:bg-white/30 transition-colors">
+                                            <i data-lucide="pause-circle" class="w-7 h-7" id="downtime-icon"></i>
+                                        </div>
+                                        <div class="text-center">
+                                            <h4 class="font-bold text-lg" id="downtime-text">Iniciar Parada</h4>
+                                            <p class="text-red-100 text-sm" id="downtime-subtitle">Registrar início de parada</p>
+                                        </div>
+                                    </div>
+                                    <div id="downtime-timer" class="absolute top-2 right-2 bg-red-300 text-red-800 text-xs font-bold px-2 py-1 rounded-full hidden">
+                                        00:00
+                                    </div>
+                                </button>
+                            </div>
+                            
+                            <!-- Botão de Lançamento Manual -->
+                            <div class="mt-4">
+                                <button id="btn-manual-downtime" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 p-4 rounded-lg shadow-md border border-gray-300 flex items-center justify-center gap-3 transition-all duration-200">
+                                    <i data-lucide="clock" class="w-5 h-5"></i>
+                                    <span class="font-semibold">Lançamento Manual de Parada</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Status e Indicadores -->
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div class="bg-white p-4 rounded-lg shadow-md text-center">
+                                <div class="text-2xl font-bold text-blue-600" id="produced-today">0</div>
+                                <div class="text-sm text-gray-600">Produzido Hoje</div>
+                            </div>
+                            <div class="bg-white p-4 rounded-lg shadow-md text-center">
+                                <div class="text-2xl font-bold text-green-600" id="efficiency-today">0%</div>
+                                <div class="text-sm text-gray-600">Eficiência</div>
+                            </div>
+                            <div class="bg-white p-4 rounded-lg shadow-md text-center">
+                                <div class="text-2xl font-bold text-orange-600" id="losses-today">0</div>
+                                <div class="text-sm text-gray-600">Perdas (kg)</div>
+                            </div>
+                            <div class="bg-white p-4 rounded-lg shadow-md text-center">
+                                <div class="text-2xl font-bold text-red-600" id="downtime-today">0</div>
+                                <div class="text-sm text-gray-600">Paradas (min)</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Lançamentos recentes -->
+                    <div class="bg-white p-4 md:p-6 rounded-xl shadow-lg">
+                        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+                            <h3 class="text-base md:text-lg font-bold text-gray-800 flex items-center gap-2">
+                                <i data-lucide="history" class="w-4 h-4 md:w-5 md:h-5 text-blue-500"></i>
+                                Lançamentos Recentes
+                            </h3>
+                            <div class="flex items-center gap-2 w-full sm:w-auto">
+                                <!-- Filtros de tipo de lançamento -->
+                                <div class="flex gap-1 bg-gray-100 rounded-lg p-1 flex-1 sm:flex-initial">
+                                    <button id="filter-all-entries" class="filter-entry-btn px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded transition-all duration-200 active bg-white text-blue-600 shadow-sm" data-filter="all">
+                                        Todos
+                                    </button>
+                                    <button id="filter-production-entries" class="filter-entry-btn px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded transition-all duration-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50" data-filter="production">
+                                        Produção
+                                    </button>
+                                    <button id="filter-downtime-entries" class="filter-entry-btn px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded transition-all duration-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50" data-filter="downtime">
+                                        Paradas
+                                    </button>
+                                    <button id="filter-loss-entries" class="filter-entry-btn px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded transition-all duration-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50" data-filter="loss">
+                                        Perdas
+                                    </button>
+                                </div>
+                                <button id="refresh-recent-entries" class="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50">
+                                    <i data-lucide="refresh-cw" class="w-3 h-3 md:w-4 md:h-4"></i>
+                                    <span class="hidden sm:inline">Atualizar</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="recent-entries-loading" class="hidden">
+                            <div class="flex items-center gap-2 text-xs md:text-sm text-gray-500">
+                                <i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>
+                                Carregando lançamentos...
+                            </div>
+                        </div>
+                        <div id="recent-entries-empty" class="hidden">
+                            <p class="text-xs md:text-sm text-gray-500">Ainda não há lançamentos para esta máquina.</p>
+                        </div>
+                        <div id="recent-entries-list" class="space-y-2 md:space-y-3"></div>
+                    </div>
+
+                    <!-- Estados de Carregamento -->
+                    <div id="launch-panel-loading" class="text-center py-20">
+                        <i data-lucide="loader-2" class="w-12 h-12 animate-spin text-blue-500 mx-auto mb-4"></i>
+                        <p class="text-gray-600">Carregando dados de produção...</p>
+                    </div>
+                    <div id="launch-panel-no-data" class="text-center py-20 text-gray-500 hidden">
+                        <i data-lucide="inbox" class="w-16 h-16 mx-auto mb-4 text-gray-300"></i>
+                        <p class="text-xl font-medium mb-2">Nenhum planejamento encontrado</p>
+                        <p>Não há itens planejados para hoje.</p>
+                    </div>
                 </div>
                 
-                <!-- PÁGINA: Melhoria Contínua -->
-                <div id="melhoria-page" class="page-content hidden space-y-6">
-                    <div class="bg-white p-6 md:p-8 rounded-lg shadow-lg border-t-4 border-status-error">
-                        <h2 class="text-2xl font-bold mb-4 flex items-center gap-2"><i data-lucide="search" class="text-status-error"></i>Nova Análise de Causa Raiz (5 Porquês)</h2>
-                        <form id="rca-form" class="space-y-4 pt-4">
-                            <div>
-                                <label for="rca-problem" class="block text-sm font-medium text-gray-700">Problema Identificado (Ex: Rebarba na H-05)</label>
-                                <input type="text" id="rca-problem" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm">
-                            </div>
-                            <div><label for="rca-why1" class="block text-sm font-medium text-gray-700">1. Porquê?</label><input type="text" id="rca-why1" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></div>
-                            <div><label for="rca-why2" class="block text-sm font-medium text-gray-700">2. Porquê?</label><input type="text" id="rca-why2" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></div>
-                            <div><label for="rca-why3" class="block text-sm font-medium text-gray-700">3. Porquê?</label><input type="text" id="rca-why3" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></div>
-                            <div><label for="rca-why4" class="block text-sm font-medium text-gray-700">4. Porquê?</label><input type="text" id="rca-why4" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></div>
-                            <div><label for="rca-why5" class="block text-sm font-medium text-gray-700">5. Porquê? (Causa Raiz)</label><input type="text" id="rca-why5" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></div>
-                            <div>
-                                <label for="rca-action" class="block text-sm font-medium text-gray-700">Plano de Ação Corretiva</label>
-                                <textarea id="rca-action" rows="3" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></textarea>
-                            </div>
-                            <button type="submit" class="w-full bg-primary-blue hover:bg-blue-800 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2"><i data-lucide="save"></i><span>Salvar Análise</span></button>
-                        </form>
-                    </div>
-                    <div class="bg-white p-6 md:p-8 rounded-lg shadow-lg">
-                        <h2 class="text-2xl font-bold mb-4 flex items-center gap-2"><i data-lucide="history" class="text-gray-600"></i>Histórico de Análises</h2>
-                        <div id="rca-list-container" class="overflow-x-auto pt-4"></div>
-                    </div>
-                </div>
 
-                <!-- PÁGINA: Parada de Máquina -->
-                <div id="parada-page" class="page-content hidden space-y-6">
-                    <div class="bg-white p-6 md:p-8 rounded-lg shadow-lg border-t-4 border-status-warning">
-                        <h2 class="text-2xl font-bold mb-4 flex items-center gap-2"><i data-lucide="wrench" class="text-status-warning"></i>Registrar Parada de Máquina</h2>
-                        <form id="downtime-form" class="space-y-5 pt-4">
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div><label for="downtime-date" class="block text-sm font-medium text-gray-700">Data da Parada</label><input type="date" id="downtime-date" name="date" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></div>
-                                <div><label for="downtime-machine" class="block text-sm font-medium text-gray-700">Máquina</label><select id="downtime-machine" name="machine" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></select></div>
-                            </div>
-                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div><label for="downtime-start-time" class="block text-sm font-medium text-gray-700">Hora Início</label><input type="time" id="downtime-start-time" name="start_time" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></div>
-                                <div><label for="downtime-end-time" class="block text-sm font-medium text-gray-700">Hora Fim</label><input type="time" id="downtime-end-time" name="end_time" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></div>
-                            </div>
-                            <div><label for="downtime-reason" class="block text-sm font-medium text-gray-700">Motivo da Parada</label><select id="downtime-reason" name="reason" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></select></div>
-                            <div><label for="downtime-observations" class="block text-sm font-medium text-gray-700">Observações</label><textarea id="downtime-observations" name="observations" rows="3" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></textarea></div>
-                            <button type="submit" id="downtime-submit-button" class="w-full bg-primary-blue hover:bg-blue-800 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2"><i data-lucide="save"></i><span>Salvar Registro de Parada</span></button>
-                            <div id="downtime-status-message" class="text-sm font-semibold h-5 text-center"></div>
-                        </form>
-                    </div>
-
-                    <div class="bg-white p-6 md:p-8 rounded-lg shadow-lg">
-                        <div class="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
-                            <h2 class="text-2xl font-bold flex items-center gap-2"><i data-lucide="list" class="text-gray-600"></i>Paradas Registradas no Dia</h2>
-                            <input type="date" id="downtime-list-date" class="border-gray-300 rounded-md p-2">
-                        </div>
-                        <div id="downtime-table-container" class="overflow-x-auto pt-4"></div>
-                        <div id="downtime-list-loading" class="text-center py-10" style="display: none;"><i data-lucide="loader-2" class="w-12 h-12 animate-spin text-status-warning mx-auto"></i></div>
-                        <div id="downtime-list-no-data" class="text-center py-10 text-gray-500" style="display: none;"><p>Nenhuma parada registrada para a data selecionada.</p></div>
-                    </div>
-                </div>
 
                 <!-- PÁGINA: Análise -->
                 <div id="analise-page" class="page-content hidden space-y-6">
                     <div class="bg-white rounded-lg shadow-lg">
                         <div class="p-6 border-b border-gray-200">
-                            <nav class="flex space-x-6">
-                                <button class="analysis-tab-btn py-2 px-1 border-b-2 transition-all duration-300 active" data-view="resumo"><i data-lucide="file-bar-chart-2" class="w-4 h-4 mr-2 inline"></i>Resumo da Produção</button>
-                                <button class="analysis-tab-btn py-2 px-1 border-b-2 transition-all duration-300" data-view="dashboard"><i data-lucide="layout-dashboard" class="w-4 h-4 mr-2 inline"></i>Dashboard Gráfico</button>
+                            <nav class="flex space-x-6 overflow-x-auto">
+                                <button class="analysis-tab-btn py-2 px-4 border-b-2 transition-all duration-300 active whitespace-nowrap" data-view="overview">
+                                    <i data-lucide="pie-chart" class="w-4 h-4 mr-2 inline"></i>Visão Geral
+                                </button>
+                                <button class="analysis-tab-btn py-2 px-4 border-b-2 transition-all duration-300 whitespace-nowrap" data-view="production">
+                                    <i data-lucide="activity" class="w-4 h-4 mr-2 inline"></i>Produção
+                                </button>
+                                <button class="analysis-tab-btn py-2 px-4 border-b-2 transition-all duration-300 whitespace-nowrap" data-view="efficiency">
+                                    <i data-lucide="trending-up" class="w-4 h-4 mr-2 inline"></i>Eficiência
+                                </button>
+                                <button class="analysis-tab-btn py-2 px-4 border-b-2 transition-all duration-300 whitespace-nowrap" data-view="losses">
+                                    <i data-lucide="alert-triangle" class="w-4 h-4 mr-2 inline"></i>Perdas
+                                </button>
+                                <button class="analysis-tab-btn py-2 px-4 border-b-2 transition-all duration-300 whitespace-nowrap" data-view="downtime">
+                                    <i data-lucide="pause-circle" class="w-4 h-4 mr-2 inline"></i>Paradas
+                                </button>
+                                <button class="analysis-tab-btn py-2 px-4 border-b-2 transition-all duration-300 whitespace-nowrap" data-view="comparative">
+                                    <i data-lucide="bar-chart-3" class="w-4 h-4 mr-2 inline"></i>Comparativo
+                                </button>
                             </nav>
                         </div>
                         
-                        <div id="resumo-view" class="analysis-view p-6">
-                            <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-                                <h2 class="text-2xl font-bold">Relatório Detalhado</h2>
-                                <div class="flex items-center gap-4">
-                                    <input type="date" id="resumo-date-selector" class="border-gray-300 rounded-md p-2">
-                                    <button id="print-report-btn" class="bg-text-dark hover:bg-gray-900 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2"><i data-lucide="printer"></i><span>Imprimir</span></button>
+                        <!-- Filtros Globais -->
+                        <div class="p-4 md:p-6 bg-gray-50 border-b border-gray-200">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+                                <div>
+                                    <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Período</label>
+                                    <select id="analysis-period" class="w-full border-gray-300 rounded-md p-2 text-sm">
+                                        <option value="today">Hoje</option>
+                                        <option value="yesterday">Ontem</option>
+                                        <option value="7days">Últimos 7 dias</option>
+                                        <option value="30days">Últimos 30 dias</option>
+                                        <option value="month">Este mês</option>
+                                        <option value="lastmonth">Mês passado</option>
+                                        <option value="custom">Personalizado</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Máquina</label>
+                                    <select id="analysis-machine" class="w-full border-gray-300 rounded-md p-2 text-sm">
+                                        <option value="all">Todas as máquinas</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Turno</label>
+                                    <select id="analysis-shift" class="w-full border-gray-300 rounded-md p-2 text-sm">
+                                        <option value="all">Todos os turnos</option>
+                                        <option value="1">1º Turno</option>
+                                        <option value="2">2º Turno</option>
+                                        <option value="3">3º Turno</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-end gap-2">
+                                    <button id="apply-analysis-filters" class="flex-1 bg-primary-blue hover:bg-blue-800 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center gap-2 text-sm">
+                                        <i data-lucide="search" class="w-4 h-4"></i>Aplicar Filtros
+                                    </button>
+                                    <button id="test-charts-btn" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-3 rounded-lg" title="Testar todos os gráficos">
+                                        <i data-lucide="bug" class="w-4 h-4"></i>
+                                    </button>
                                 </div>
                             </div>
-                            <div class="flex items-center rounded-md bg-gray-100 p-1 text-sm self-start mb-4">
-                                <button id="report-quant-btn" class="report-toggle-btn px-4 py-2 rounded-md active">Quantitativo</button>
-                                <button id="report-effic-btn" class="report-toggle-btn px-4 py-2 rounded-md">Eficiência</button>
+                            <div id="custom-date-range" class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 hidden">
+                                <div>
+                                    <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Data Inicial</label>
+                                    <input type="date" id="analysis-start-date" class="w-full border-gray-300 rounded-md p-2 text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Data Final</label>
+                                    <input type="date" id="analysis-end-date" class="w-full border-gray-300 rounded-md p-2 text-sm">
+                                </div>
                             </div>
-                            <div id="resumo-content-container" class="overflow-x-auto"></div>
-                            <div id="resumo-loading" class="text-center py-10" style="display: none;"><i data-lucide="loader-2" class="w-12 h-12 animate-spin text-primary-blue"></i></div>
-                            <div id="resumo-no-data" class="text-center py-10" style="display: none;"><p>Nenhum dado encontrado.</p></div>
                         </div>
 
-                        <div id="dashboard-view" class="analysis-view p-6 hidden">
-                            <div class="mb-6 flex flex-col xl:flex-row items-center justify-between gap-4">
-                                <div class="w-full flex flex-col md:flex-row items-center gap-4">
-                                    <div class="flex-1 flex items-center gap-2">
-                                        <label for="start-date-selector" class="font-semibold">De:</label>
-                                        <input type="date" id="start-date-selector" class="w-full border-gray-300 rounded-md p-2">
-                                    </div>
-                                    <div class="flex-1 flex items-center gap-2">
-                                        <label for="end-date-selector" class="font-semibold">Até:</label>
-                                        <input type="date" id="end-date-selector" class="w-full border-gray-300 rounded-md p-2">
-                                    </div>
-                                    <div class="flex items-center gap-2">
-                                        <button data-range="7" class="date-range-btn px-3 py-2 text-sm bg-gray-200 rounded-md">7 dias</button>
-                                        <button data-range="30" class="date-range-btn px-3 py-2 text-sm bg-gray-200 rounded-md">30 dias</button>
-                                        <button data-range="month" class="date-range-btn px-3 py-2 text-sm bg-gray-200 rounded-md">Este Mês</button>
+                        <!-- Visão Geral -->
+                        <div id="overview-view" class="analysis-view p-4 md:p-6">
+                            <!-- KPIs Principais -->
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
+                                <div class="bg-gradient-to-br from-green-500 to-green-600 text-white p-4 md:p-6 rounded-lg shadow-lg">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <p class="text-green-100 text-xs md:text-sm">OEE Geral</p>
+                                            <p id="overview-oee" class="text-2xl md:text-3xl font-bold">---%</p>
+                                        </div>
+                                        <i data-lucide="target" class="w-8 h-8 md:w-10 md:h-10 text-green-100"></i>
                                     </div>
                                 </div>
-                                <button id="refresh-dashboard-btn" class="w-full xl:w-auto bg-primary-blue hover:bg-blue-800 text-white font-bold p-2 px-6 rounded-lg flex items-center justify-center gap-2"><i data-lucide="search"></i><span>Filtrar</span></button>
-                            </div>
-                            <div id="dashboard-content" class="space-y-6" style="display: none;">
-                                <div class="p-6 rounded-lg">
-                                    <h2 class="text-xl font-bold mb-4">Indicadores OEE</h2>
-                                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                                        <div class="p-5 rounded-lg shadow-lg flex items-center gap-4 border-l-4 border-accent-2">
-                                            <div class="p-3 bg-green-100 rounded-full"><i data-lucide="timer" class="w-7 h-7 text-accent-2"></i></div>
-                                            <div><p class="text-sm text-gray-500">Disponibilidade</p><p id="kpi-disponibilidade" class="text-2xl font-bold">...</p></div>
+                                <div class="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-4 md:p-6 rounded-lg shadow-lg">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <p class="text-blue-100 text-xs md:text-sm">Produção Total</p>
+                                            <p id="overview-production" class="text-2xl md:text-3xl font-bold">---</p>
                                         </div>
-                                        <div class="p-5 rounded-lg shadow-lg flex items-center gap-4 border-l-4 border-primary-blue">
-                                            <div class="p-3 bg-blue-100 rounded-full"><i data-lucide="gauge" class="w-7 h-7 text-primary-blue"></i></div>
-                                            <div><p class="text-sm text-gray-500">Performance</p><p id="kpi-performance" class="text-2xl font-bold">...</p></div>
-                                        </div>
-                                        <div class="p-5 rounded-lg shadow-lg flex items-center gap-4 border-l-4 border-status-warning">
-                                            <div class="p-3 bg-yellow-100 rounded-full"><i data-lucide="award" class="w-7 h-7 text-status-warning"></i></div>
-                                            <div><p class="text-sm text-gray-500">Qualidade</p><p id="kpi-qualidade" class="text-2xl font-bold">...</p></div>
-                                        </div>
-                                        <div class="bg-gradient-to-br from-accent-1 to-primary-blue text-white p-5 rounded-lg shadow-xl flex items-center gap-4">
-                                            <div class="p-3 bg-white/20 rounded-full"><i data-lucide="star"></i></div>
-                                            <div><p class="text-sm">OEE Geral</p><p id="kpi-oee" class="text-2xl font-bold">...</p></div>
-                                        </div>
+                                        <i data-lucide="package" class="w-8 h-8 md:w-10 md:h-10 text-blue-100"></i>
                                     </div>
                                 </div>
-                                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                    <div class="p-6 rounded-lg shadow-lg relative">
-                                        <div class="flex justify-between items-center mb-4">
-                                            <h2 class="text-xl font-bold">Análise Gráfica</h2>
-                                            <div class="flex items-center rounded-md bg-gray-100 p-1 text-sm">
-                                                <button id="chart-toggle-prod" class="chart-toggle-btn px-3 py-1 rounded-md active">Produção</button>
-                                                <button id="chart-toggle-oee" class="chart-toggle-btn px-3 py-1 rounded-md">Eficiência</button>
-                                            </div>
+                                <div class="bg-gradient-to-br from-yellow-500 to-yellow-600 text-white p-4 md:p-6 rounded-lg shadow-lg">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <p class="text-yellow-100 text-xs md:text-sm">Total de Perdas</p>
+                                            <p id="overview-losses" class="text-2xl md:text-3xl font-bold">---</p>
                                         </div>
-                                        <div class="flex items-center gap-2 mb-4">
-                                            <label for="graph-machine-filter" class="font-semibold text-sm">Máquina:</label>
-                                            <select id="graph-machine-filter" class="w-full border-gray-300 rounded-md p-2 text-sm"></select>
-                                        </div>
-                                        <div id="production-chart-container" class="relative h-72">
-                                            <canvas id="productionTimelineChart"></canvas>
-                                        </div>
-                                        <div id="oee-chart-container" class="relative h-72 hidden">
-                                            <canvas id="oeeByShiftChart"></canvas>
-                                        </div>
-                                        <div id="timeline-chart-message" class="hidden absolute inset-0 items-center justify-center text-gray-500">
-                                            <p>Selecione uma máquina para ver os gráficos.</p>
-                                        </div>
+                                        <i data-lucide="alert-triangle" class="w-8 h-8 md:w-10 md:h-10 text-yellow-100"></i>
                                     </div>
-                                    <div class="p-6 rounded-lg shadow-lg relative">
-                                        <h2 class="text-xl font-bold mb-4">Principais Motivos de Refugo</h2>
-                                        <canvas id="paretoChart"></canvas>
+                                </div>
+                                <div class="bg-gradient-to-br from-red-500 to-red-600 text-white p-4 md:p-6 rounded-lg shadow-lg">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <p class="text-red-100 text-xs md:text-sm">Tempo de Parada</p>
+                                            <p id="overview-downtime" class="text-2xl md:text-3xl font-bold">---h</p>
+                                        </div>
+                                        <i data-lucide="pause-circle" class="w-8 h-8 md:w-10 md:h-10 text-red-100"></i>
                                     </div>
                                 </div>
                             </div>
-                            <div id="dashboard-loading" class="text-center py-10" style="display: none;">
-                                <i data-lucide="loader-2" class="w-12 h-12 animate-spin text-primary-blue"></i>
-                                <p class="mt-4">A carregar dados...</p>
+
+                            <!-- Gráficos de Visão Geral -->
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 mb-6 md:mb-8">
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <h3 class="text-base md:text-lg font-semibold mb-4 flex items-center gap-2">
+                                        <i data-lucide="pie-chart" class="w-4 h-4 md:w-5 md:h-5 text-primary-blue"></i>
+                                        <span class="text-sm md:text-base">Distribuição OEE por Máquina</span>
+                                    </h3>
+                                    <div class="relative" style="height: 250px;">
+                                        <canvas id="oee-distribution-chart"></canvas>
+                                    </div>
+                                </div>
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <h3 class="text-base md:text-lg font-semibold mb-4 flex items-center gap-2">
+                                        <i data-lucide="activity" class="w-4 h-4 md:w-5 md:h-5 text-green-600"></i>
+                                        <span class="text-sm md:text-base">Tendência OEE (Últimos 7 dias)</span>
+                                    </h3>
+                                    <div class="relative" style="height: 250px;">
+                                        <canvas id="oee-trend-overview"></canvas>
+                                    </div>
+                                </div>
                             </div>
-                            <div id="dashboard-error" class="text-center py-10 bg-red-50 rounded-lg" style="display: none;">
-                                <i data-lucide="alert-triangle" class="w-12 h-12 text-status-error mx-auto"></i>
-                                <p class="mt-4 font-semibold text-red-700">Não foi possível carregar os dados.</p>
+
+                            <!-- Ranking de Performance -->
+                            <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                <h3 class="text-base md:text-lg font-semibold mb-4 flex items-center gap-2">
+                                    <i data-lucide="award" class="w-4 h-4 md:w-5 md:h-5 text-yellow-500"></i>
+                                    <span class="text-sm md:text-base">Ranking de Performance por Máquina</span>
+                                </h3>
+                                <div id="machine-ranking" class="space-y-4">
+                                    <!-- Conteúdo será gerado dinamicamente -->
+                                </div>
                             </div>
+                        </div>
+
+                        <!-- Análise de Produção -->
+                        <div id="production-view" class="analysis-view p-6 hidden">
+                            <!-- Métricas de Produção -->
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                                <div class="bg-white p-6 rounded-lg shadow-lg border">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <p class="text-gray-600 text-sm">Meta vs Realizado</p>
+                                            <p id="production-target-vs-actual" class="text-2xl font-bold text-blue-600">---%</p>
+                                        </div>
+                                        <i data-lucide="target" class="w-8 h-8 text-blue-500"></i>
+                                    </div>
+                                </div>
+                                <div class="bg-white p-6 rounded-lg shadow-lg border">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <p class="text-gray-600 text-sm">Taxa de Produção</p>
+                                            <p id="production-rate" class="text-2xl font-bold text-green-600">--- pcs/h</p>
+                                        </div>
+                                        <i data-lucide="zap" class="w-8 h-8 text-green-500"></i>
+                                    </div>
+                                </div>
+                                <div class="bg-white p-6 rounded-lg shadow-lg border">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <p class="text-gray-600 text-sm">Máquina Top</p>
+                                            <p id="top-machine" class="text-2xl font-bold text-purple-600">---</p>
+                                        </div>
+                                        <i data-lucide="crown" class="w-8 h-8 text-purple-500"></i>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Gráficos de Produção -->
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <div class="bg-white p-6 rounded-lg shadow-lg border">
+                                    <h3 class="text-lg font-semibold mb-4">Produção por Hora</h3>
+                                    <canvas id="hourly-production-chart" height="300"></canvas>
+                                </div>
+                                <div class="bg-white p-6 rounded-lg shadow-lg border">
+                                    <h3 class="text-lg font-semibold mb-4">Produção por Turno</h3>
+                                    <canvas id="shift-production-chart" height="300"></canvas>
+                                </div>
+                                <div class="bg-white p-6 rounded-lg shadow-lg border lg:col-span-2">
+                                    <h3 class="text-lg font-semibold mb-4">Histórico de Produção por Máquina</h3>
+                                    <canvas id="machine-production-timeline" height="400"></canvas>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Análise de Eficiência -->
+                        <div id="efficiency-view" class="analysis-view p-4 md:p-6 hidden">
+                            <!-- Componentes OEE -->
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mb-6 md:mb-8">
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <h4 class="text-base md:text-lg font-semibold mb-4 text-green-600">Disponibilidade</h4>
+                                    <div class="relative mx-auto" style="max-width: 200px; height: 200px;">
+                                        <canvas id="availability-gauge"></canvas>
+                                        <div class="absolute inset-0 flex items-center justify-center">
+                                            <span id="availability-value" class="text-xl md:text-2xl font-bold text-green-600">---%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <h4 class="text-base md:text-lg font-semibold mb-4 text-blue-600">Performance</h4>
+                                    <div class="relative mx-auto" style="max-width: 200px; height: 200px;">
+                                        <canvas id="performance-gauge"></canvas>
+                                        <div class="absolute inset-0 flex items-center justify-center">
+                                            <span id="performance-value" class="text-xl md:text-2xl font-bold text-blue-600">---%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <h4 class="text-base md:text-lg font-semibold mb-4 text-yellow-600">Qualidade</h4>
+                                    <div class="relative mx-auto" style="max-width: 200px; height: 200px;">
+                                        <canvas id="quality-gauge"></canvas>
+                                        <div class="absolute inset-0 flex items-center justify-center">
+                                            <span id="quality-value" class="text-xl md:text-2xl font-bold text-yellow-600">---%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Evolução OEE -->
+                            <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border mb-6">
+                                <h3 class="text-base md:text-lg font-semibold mb-4">Evolução dos Componentes OEE</h3>
+                                <div class="relative" style="height: 300px;">
+                                    <canvas id="oee-components-timeline"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- Mapa de Calor OEE -->
+                            <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                <h3 class="text-base md:text-lg font-semibold mb-4">Mapa de Calor - OEE por Máquina/Turno</h3>
+                                <div id="oee-heatmap" class="overflow-x-auto">
+                                    <!-- Será gerado dinamicamente -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Análise de Perdas -->
+                        <div id="losses-view" class="analysis-view p-4 md:p-6 hidden">
+                            <!-- Resumo de Perdas -->
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <div class="text-center">
+                                        <p class="text-gray-600 text-xs md:text-sm">Total de Perdas</p>
+                                        <p id="total-losses" class="text-2xl md:text-3xl font-bold text-red-600">---</p>
+                                    </div>
+                                </div>
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <div class="text-center">
+                                        <p class="text-gray-600 text-xs md:text-sm">% sobre Produção</p>
+                                        <p id="losses-percentage" class="text-2xl md:text-3xl font-bold text-orange-600">---%</p>
+                                    </div>
+                                </div>
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <div class="text-center">
+                                        <p class="text-gray-600 text-xs md:text-sm">Principal Motivo</p>
+                                        <p id="main-loss-reason" class="text-base md:text-lg font-bold text-gray-800">---</p>
+                                    </div>
+                                </div>
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <div class="text-center">
+                                        <p class="text-gray-600 text-xs md:text-sm">MP Mais Perdida</p>
+                                        <p id="main-loss-material" class="text-base md:text-lg font-bold text-purple-600">---</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Gráficos de Perdas -->
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <h3 class="text-base md:text-lg font-semibold mb-4">Pareto de Perdas por Motivo</h3>
+                                    <div class="relative" style="height: 300px;">
+                                        <canvas id="losses-pareto-chart"></canvas>
+                                    </div>
+                                </div>
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <h3 class="text-base md:text-lg font-semibold mb-4">Perdas por Máquina</h3>
+                                    <div class="relative" style="height: 300px;">
+                                        <canvas id="losses-by-machine-chart"></canvas>
+                                    </div>
+                                </div>
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <h3 class="text-base md:text-lg font-semibold mb-4">Perdas por Tipo de MP</h3>
+                                    <div class="relative" style="height: 300px;">
+                                        <canvas id="losses-by-material-chart"></canvas>
+                                    </div>
+                                </div>
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border lg:col-span-2">
+                                    <h3 class="text-base md:text-lg font-semibold mb-4">Tendência de Perdas</h3>
+                                    <div class="relative" style="height: 350px;">
+                                        <canvas id="losses-trend-chart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Análise de Paradas -->
+                        <div id="downtime-view" class="analysis-view p-4 md:p-6 hidden">
+                            <!-- Resumo de Paradas -->
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <div class="text-center">
+                                        <p class="text-gray-600 text-xs md:text-sm">Tempo Total</p>
+                                        <p id="total-downtime" class="text-2xl md:text-3xl font-bold text-red-600">---h</p>
+                                    </div>
+                                </div>
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <div class="text-center">
+                                        <p class="text-gray-600 text-xs md:text-sm">Número de Paradas</p>
+                                        <p id="downtime-count" class="text-2xl md:text-3xl font-bold text-orange-600">---</p>
+                                    </div>
+                                </div>
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <div class="text-center">
+                                        <p class="text-gray-600 text-xs md:text-sm">Tempo Médio</p>
+                                        <p id="avg-downtime" class="text-2xl md:text-3xl font-bold text-yellow-600">---min</p>
+                                    </div>
+                                </div>
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <div class="text-center">
+                                        <p class="text-gray-600 text-xs md:text-sm">MTBF</p>
+                                        <p id="mtbf-value" class="text-2xl md:text-3xl font-bold text-blue-600">---h</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Gráficos de Paradas -->
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <h3 class="text-base md:text-lg font-semibold mb-4">Paradas por Motivo</h3>
+                                    <div class="relative" style="height: 300px;">
+                                        <canvas id="downtime-reasons-chart"></canvas>
+                                    </div>
+                                </div>
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <h3 class="text-base md:text-lg font-semibold mb-4">Paradas por Máquina</h3>
+                                    <div class="relative" style="height: 300px;">
+                                        <canvas id="downtime-by-machine-chart"></canvas>
+                                    </div>
+                                </div>
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border lg:col-span-2">
+                                    <h3 class="text-base md:text-lg font-semibold mb-4">Timeline de Paradas</h3>
+                                    <div class="relative" style="height: 350px;">
+                                        <canvas id="downtime-timeline-chart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Análise Comparativa -->
+                        <div id="comparative-view" class="analysis-view p-4 md:p-6 hidden">
+                            <!-- Seletor de Comparação -->
+                            <div class="bg-gray-50 p-3 md:p-4 rounded-lg mb-4 md:mb-6">
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
+                                    <div>
+                                        <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Tipo de Comparação</label>
+                                        <select id="comparison-type" class="w-full border-gray-300 rounded-md p-2 text-sm">
+                                            <option value="machines">Entre Máquinas</option>
+                                            <option value="shifts">Entre Turnos</option>
+                                            <option value="periods">Entre Períodos</option>
+                                            <option value="products">Entre Produtos</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Métrica Principal</label>
+                                        <select id="comparison-metric" class="w-full border-gray-300 rounded-md p-2 text-sm">
+                                            <option value="oee">OEE</option>
+                                            <option value="production">Produção</option>
+                                            <option value="efficiency">Eficiência</option>
+                                            <option value="quality">Qualidade</option>
+                                        </select>
+                                    </div>
+                                    <div class="flex items-end">
+                                        <button id="generate-comparison" class="w-full bg-primary-blue hover:bg-blue-800 text-white font-bold py-2 px-3 md:px-4 rounded-lg text-sm md:text-base">
+                                            Gerar Comparação
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Resultados da Comparação -->
+                            <div id="comparison-results" class="space-y-4 md:space-y-6">
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <h3 class="text-base md:text-lg font-semibold mb-4">Comparação Visual</h3>
+                                    <div class="relative" style="height: 350px;">
+                                        <canvas id="comparison-chart"></canvas>
+                                    </div>
+                                </div>
+                                
+                                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+                                    <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                        <h3 class="text-base md:text-lg font-semibold mb-4">Ranking de Performance</h3>
+                                        <div id="comparison-ranking" class="space-y-2 md:space-y-3">
+                                            <!-- Será gerado dinamicamente -->
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="bg-white p-6 rounded-lg shadow-lg border">
+                                        <h3 class="text-lg font-semibold mb-4">Estatísticas</h3>
+                                        <div id="comparison-stats" class="space-y-3">
+                                            <!-- Será gerado dinamicamente -->
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Loading e No Data States -->
+                        <div id="analysis-loading" class="text-center py-20 hidden">
+                            <i data-lucide="loader-2" class="w-12 h-12 animate-spin text-primary-blue mx-auto"></i>
+                            <p class="mt-4 text-gray-600">Carregando dados de análise...</p>
+                        </div>
+                        
+                        <div id="analysis-no-data" class="text-center py-20 hidden">
+                            <i data-lucide="database" class="w-16 h-16 text-gray-400 mx-auto"></i>
+                            <p class="mt-4 text-gray-600 text-lg">Nenhum dado encontrado para o período selecionado</p>
+                            <p class="text-gray-500">Tente ajustar os filtros ou selecionar um período diferente</p>
                         </div>
                     </div>
                 </div>
@@ -462,6 +962,299 @@
         </form>
     </div>
 </div>
+
+    <!-- Modal de Lançamento de Produção -->
+    <div id="quick-production-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+            <div class="flex justify-between items-center border-b pb-4 mb-6">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                        <i data-lucide="package-plus" class="w-5 h-5 text-green-600"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800">Lançar Produção</h3>
+                </div>
+                <button id="quick-production-close" class="p-2 rounded-full hover:bg-gray-100">
+                    <i data-lucide="x" class="w-5 h-5 text-gray-500"></i>
+                </button>
+            </div>
+            <form id="quick-production-form" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Quantidade Produzida</label>
+                    <input type="number" id="quick-production-qty" name="quantity" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="Quantidade de peças" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Peso (kg)</label>
+                    <input type="number" step="0.01" id="quick-production-weight" name="weight" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="Peso em kg">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Observações</label>
+                    <textarea id="quick-production-obs" name="observations" rows="2" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="Observações opcionais"></textarea>
+                </div>
+                <div class="flex gap-3 pt-4">
+                    <button type="button" id="quick-production-cancel" class="flex-1 py-3 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="flex-1 py-3 px-4 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium">
+                        Registrar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal de Registro de Perdas -->
+    <div id="quick-losses-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+            <div class="flex justify-between items-center border-b pb-4 mb-6">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
+                        <i data-lucide="alert-triangle" class="w-5 h-5 text-orange-600"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800">Registrar Perdas</h3>
+                </div>
+                <button id="quick-losses-close" class="p-2 rounded-full hover:bg-gray-100">
+                    <i data-lucide="x" class="w-5 h-5 text-gray-500"></i>
+                </button>
+            </div>
+            <form id="quick-losses-form" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Quantidade de Perdas</label>
+                    <input type="number" id="quick-losses-qty" name="quantity" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" placeholder="Quantidade de peças perdidas" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Peso das Perdas (kg)</label>
+                    <input type="number" step="0.01" id="quick-losses-weight" name="weight" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" placeholder="Peso em kg">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Motivo da Perda</label>
+                    <select id="quick-losses-reason" name="reason" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" required>
+                        <option value="">Selecione o motivo...</option>
+                        <optgroup label="PROCESSO">
+                            <option value="BOLHA">BOLHA</option>
+                            <option value="CHUPAGEM">CHUPAGEM</option>
+                            <option value="CONTAMINAÇÃO">CONTAMINAÇÃO</option>
+                            <option value="DEGRADAÇÃO">DEGRADAÇÃO</option>
+                            <option value="EMPENAMENTO">EMPENAMENTO</option>
+                            <option value="FALHA">FALHA</option>
+                            <option value="FIAPO">FIAPO</option>
+                            <option value="FORA DE COR">FORA DE COR</option>
+                            <option value="INÍCIO/REÍNICIO">INÍCIO/REÍNÍCIO</option>
+                            <option value="JUNÇÃO">JUNÇÃO</option>
+                            <option value="MANCHAS">MANCHAS</option>
+                            <option value="MEDIDA FORA DO ESPECIFICADO">MEDIDA FORA DO ESPECIFICADO</option>
+                            <option value="MOÍDO">MOÍDO</option>
+                            <option value="PEÇAS PERDIDAS">PEÇAS PERDIDAS</option>
+                            <option value="QUEIMA">QUEIMA</option>
+                            <option value="REBARBA">REBARBA</option>
+                        </optgroup>
+                        <optgroup label="FERRAMENTARIA">
+                            <option value="DEFORMAÇÃO">DEFORMAÇÃO</option>
+                            <option value="GALHO PRESO">GALHO PRESO</option>
+                            <option value="MARCA D'ÁGUA">MARCA D'ÁGUA</option>
+                            <option value="MARCA EXTRATOR">MARCA EXTRATOR</option>
+                            <option value="RISCOS">RISCOS</option>
+                            <option value="SUJIDADE">SUJIDADE</option>
+                        </optgroup>
+                        <optgroup label="QUALIDADE">
+                            <option value="INSPEÇÃO DE LINHA">INSPEÇÃO DE LINHA</option>
+                        </optgroup>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Observações</label>
+                    <textarea id="quick-losses-obs" rows="2" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" placeholder="Observações sobre a perda"></textarea>
+                </div>
+                <div class="flex gap-3 pt-4">
+                    <button type="button" id="quick-losses-cancel" class="flex-1 py-3 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="flex-1 py-3 px-4 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium">
+                        Registrar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal de Parada -->
+    <div id="quick-downtime-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+            <div class="flex justify-between items-center border-b pb-4 mb-6">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                        <i data-lucide="pause-circle" class="w-5 h-5 text-red-600"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800" id="downtime-modal-title">Informar Motivo da Parada</h3>
+                </div>
+                <button id="quick-downtime-close" class="p-2 rounded-full hover:bg-gray-100">
+                    <i data-lucide="x" class="w-5 h-5 text-gray-500"></i>
+                </button>
+            </div>
+            <form id="quick-downtime-form" class="space-y-4">
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                    <p class="text-sm text-yellow-800">
+                        <i data-lucide="info" class="w-4 h-4 inline mr-1"></i>
+                        Selecione o motivo da parada que acabou de finalizar.
+                    </p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Motivo da Parada</label>
+                    <select id="quick-downtime-reason" name="reason" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent" required>
+                        <option value="">Selecione o motivo...</option>
+                        <optgroup label="FERRAMENTARIA">
+                            <option value="CORRETIVA DE MOLDE">CORRETIVA DE MOLDE</option>
+                            <option value="PREVENTIVA DE MOLDE">PREVENTIVA DE MOLDE</option>
+                            <option value="TROCA DE VERSÃO">TROCA DE VERSÃO</option>
+                        </optgroup>
+                        <optgroup label="PROCESSO">
+                            <option value="ABERTURA DE CAVIDADE">ABERTURA DE CAVIDADE</option>
+                            <option value="AJUSTE DE PROCESSO">AJUSTE DE PROCESSO</option>
+                            <option value="TRY OUT">TRY OUT</option>
+                        </optgroup>
+                        <optgroup label="COMPRAS">
+                            <option value="FALTA DE INSUMO PLANEJADA">FALTA DE INSUMO PLANEJADA</option>
+                            <option value="FALTA DE INSUMO NÃO PLANEJADA">FALTA DE INSUMO NÃO PLANEJADA</option>
+                        </optgroup>
+                        <optgroup label="PREPARAÇÃO">
+                            <option value="AGUARDANDO PREPARAÇÃO DE MATERIAL">AGUARDANDO PREPARAÇÃO DE MATERIAL</option>
+                        </optgroup>
+                        <optgroup label="QUALIDADE">
+                            <option value="AGUARDANDO CLIENTE/FORNECEDOR">AGUARDANDO CLIENTE/FORNECEDOR</option>
+                            <option value="LIBERAÇÃO">LIBERAÇÃO</option>
+                        </optgroup>
+                        <optgroup label="MANUTENÇÃO">
+                            <option value="MANUTENÇÃO CORRETIVA">MANUTENÇÃO CORRETIVA</option>
+                            <option value="MANUTENÇÃO PREVENTIVA">MANUTENÇÃO PREVENTIVA</option>
+                        </optgroup>
+                        <optgroup label="PRODUÇÃO">
+                            <option value="FALTA DE OPERADOR">FALTA DE OPERADOR</option>
+                            <option value="TROCA DE COR">TROCA DE COR</option>
+                        </optgroup>
+                        <optgroup label="SETUP">
+                            <option value="INSTALAÇÃO DE MOLDE">INSTALAÇÃO DE MOLDE</option>
+                            <option value="RETIRADA DE MOLDE">RETIRADA DE MOLDE</option>
+                        </optgroup>
+                        <optgroup label="ADMINISTRATIVO">
+                            <option value="FALTA DE ENERGIA">FALTA DE ENERGIA</option>
+                        </optgroup>
+                        <optgroup label="PCP">
+                            <option value="SEM PROGRAMAÇÃO">SEM PROGRAMAÇÃO</option>
+                        </optgroup>
+                        <optgroup label="COMERCIAL">
+                            <option value="SEM PEDIDO">SEM PEDIDO</option>
+                        </optgroup>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Observações</label>
+                    <textarea id="quick-downtime-obs" name="observations" rows="2" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent" placeholder="Observações sobre a parada"></textarea>
+                </div>
+                <div class="flex gap-3 pt-4">
+                    <button type="button" id="quick-downtime-cancel" class="flex-1 py-3 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="flex-1 py-3 px-4 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium" id="downtime-action-btn">
+                        Registrar e Retomar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal de Lançamento Manual de Parada Passada -->
+    <div id="manual-downtime-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+            <div class="flex justify-between items-center border-b pb-4 mb-6">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
+                        <i data-lucide="clock" class="w-5 h-5 text-orange-600"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800">Lançamento Manual de Parada</h3>
+                </div>
+                <button id="manual-downtime-close" class="p-2 rounded-full hover:bg-gray-100">
+                    <i data-lucide="x" class="w-5 h-5 text-gray-500"></i>
+                </button>
+            </div>
+            <form id="manual-downtime-form" class="space-y-4">
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                    <p class="text-sm text-blue-800">
+                        <i data-lucide="info" class="w-4 h-4 inline mr-1"></i>
+                        Use este formulário para registrar paradas que não foram apontadas no momento.
+                    </p>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Horário de Início</label>
+                        <input type="time" id="manual-downtime-start" name="startTime" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Horário de Fim</label>
+                        <input type="time" id="manual-downtime-end" name="endTime" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" required>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Motivo da Parada</label>
+                    <select id="manual-downtime-reason" name="reason" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" required>
+                        <option value="">Selecione o motivo...</option>
+                        <optgroup label="FERRAMENTARIA">
+                            <option value="CORRETIVA DE MOLDE">CORRETIVA DE MOLDE</option>
+                            <option value="PREVENTIVA DE MOLDE">PREVENTIVA DE MOLDE</option>
+                            <option value="TROCA DE VERSÃO">TROCA DE VERSÃO</option>
+                        </optgroup>
+                        <optgroup label="PROCESSO">
+                            <option value="ABERTURA DE CAVIDADE">ABERTURA DE CAVIDADE</option>
+                            <option value="AJUSTE DE PROCESSO">AJUSTE DE PROCESSO</option>
+                            <option value="TRY OUT">TRY OUT</option>
+                        </optgroup>
+                        <optgroup label="COMPRAS">
+                            <option value="FALTA DE INSUMO PLANEJADA">FALTA DE INSUMO PLANEJADA</option>
+                            <option value="FALTA DE INSUMO NÃO PLANEJADA">FALTA DE INSUMO NÃO PLANEJADA</option>
+                        </optgroup>
+                        <optgroup label="PREPARAÇÃO">
+                            <option value="AGUARDANDO PREPARAÇÃO DE MATERIAL">AGUARDANDO PREPARAÇÃO DE MATERIAL</option>
+                        </optgroup>
+                        <optgroup label="QUALIDADE">
+                            <option value="AGUARDANDO CLIENTE/FORNECEDOR">AGUARDANDO CLIENTE/FORNECEDOR</option>
+                            <option value="LIBERAÇÃO">LIBERAÇÃO</option>
+                        </optgroup>
+                        <optgroup label="MANUTENÇÃO">
+                            <option value="MANUTENÇÃO CORRETIVA">MANUTENÇÃO CORRETIVA</option>
+                            <option value="MANUTENÇÃO PREVENTIVA">MANUTENÇÃO PREVENTIVA</option>
+                        </optgroup>
+                        <optgroup label="PRODUÇÃO">
+                            <option value="FALTA DE OPERADOR">FALTA DE OPERADOR</option>
+                            <option value="TROCA DE COR">TROCA DE COR</option>
+                        </optgroup>
+                        <optgroup label="SETUP">
+                            <option value="INSTALAÇÃO DE MOLDE">INSTALAÇÃO DE MOLDE</option>
+                            <option value="RETIRADA DE MOLDE">RETIRADA DE MOLDE</option>
+                        </optgroup>
+                        <optgroup label="ADMINISTRATIVO">
+                            <option value="FALTA DE ENERGIA">FALTA DE ENERGIA</option>
+                        </optgroup>
+                        <optgroup label="PCP">
+                            <option value="SEM PROGRAMAÇÃO">SEM PROGRAMAÇÃO</option>
+                        </optgroup>
+                        <optgroup label="COMERCIAL">
+                            <option value="SEM PEDIDO">SEM PEDIDO</option>
+                        </optgroup>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Observações</label>
+                    <textarea id="manual-downtime-obs" name="observations" rows="2" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" placeholder="Observações sobre a parada"></textarea>
+                </div>
+                <div class="flex gap-3 pt-4">
+                    <button type="button" id="manual-downtime-cancel" class="flex-1 py-3 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="flex-1 py-3 px-4 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium">
+                        Registrar Parada
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <div id="confirm-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
          <div class="bg-white rounded-lg shadow-lg p-6 w-full max-w-sm m-4 text-center">
