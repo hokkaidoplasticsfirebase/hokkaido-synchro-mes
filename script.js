@@ -693,61 +693,68 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- INITIALIZATION ---
     function init() {
-        // Verificar autenticação primeiro
-        if (!window.authSystem || !window.authSystem.getCurrentUser()) {
-            window.location.href = 'login.html';
-            return;
-        }
-        
-        // Atualizar interface com informações do usuário
-        window.authSystem.updateUserInterface();
-        
-        setTodayDate();
-        setupEventListeners();
-        setupPlanningTab();
-        setupLaunchTab();
-        setupAnalysisTab();
-        populateLossOptions();
-        
-        // Inicializar dados básicos
-        loadAnalysisMachines();
-        populateQuickFormOptions();
-        populateLaunchMachineSelector();
-        
-        // Verificar se os elementos críticos existem
+        // Verificar autenticação primeiro (com pequeno delay para garantir carregamento)
         setTimeout(() => {
-            console.log('🔍 Verificando elementos críticos...');
-            console.log('machine-selector:', !!document.getElementById('machine-selector'));
-            console.log('quick-production-form:', !!document.getElementById('quick-production-form'));
-            console.log('quick-losses-form:', !!document.getElementById('quick-losses-form'));
-            console.log('quick-downtime-form:', !!document.getElementById('quick-downtime-form'));
-            console.log('btn-losses:', !!document.getElementById('btn-losses'));
-            console.log('btn-downtime:', !!document.getElementById('btn-downtime'));
-        }, 1000);
-        
-        if (productionModalForm && !document.getElementById('production-entry-plan-id')) {
-            const planIdInput = document.createElement('input');
-            planIdInput.type = 'hidden';
-            planIdInput.id = 'production-entry-plan-id';
-            planIdInput.name = 'planId';
-            productionModalForm.prepend(planIdInput);
-        }
-        
-        // Iniciar atualização automática de OEE em tempo real (a cada 5 minutos)
-        setInterval(updateRealTimeOeeData, 5 * 60 * 1000);
-        
-        // Iniciar atualização automática da timeline (a cada minuto)
-        setInterval(updateTimelineIfVisible, 60 * 1000);
-        
-        // Atualizar imediatamente se estivermos na aba de dashboard ou análise
-        setTimeout(updateRealTimeOeeData, 2000);
-        
-        // Adicionar listener para redimensionar gráficos
-        window.addEventListener('resize', debounce(handleWindowResize, 250));
-        
-        // Final da inicialização - carregar aba de lançamento por padrão
-        loadLaunchPanel();
-        lucide.createIcons();
+            if (!window.authSystem || !window.authSystem.getCurrentUser()) {
+                console.warn('⚠️ Autenticação não encontrada. Redirecionando para login...');
+                window.location.href = 'login.html';
+                return;
+            }
+            
+            console.log('✅ Usuário autenticado. Inicializando interface...');
+            
+            // Atualizar interface com informações do usuário
+            if (window.authSystem && typeof window.authSystem.updateUserInterface === 'function') {
+                window.authSystem.updateUserInterface();
+            }
+            
+            setTodayDate();
+            setupEventListeners();
+            setupPlanningTab();
+            setupLaunchTab();
+            setupAnalysisTab();
+            populateLossOptions();
+            
+            // Inicializar dados básicos
+            loadAnalysisMachines();
+            populateQuickFormOptions();
+            populateLaunchMachineSelector();
+            
+            // Verificar se os elementos críticos existem
+            setTimeout(() => {
+                console.log('🔍 Verificando elementos críticos...');
+                console.log('machine-selector:', !!document.getElementById('machine-selector'));
+                console.log('quick-production-form:', !!document.getElementById('quick-production-form'));
+                console.log('quick-losses-form:', !!document.getElementById('quick-losses-form'));
+                console.log('quick-downtime-form:', !!document.getElementById('quick-downtime-form'));
+                console.log('btn-losses:', !!document.getElementById('btn-losses'));
+                console.log('btn-downtime:', !!document.getElementById('btn-downtime'));
+            }, 1000);
+            
+            if (productionModalForm && !document.getElementById('production-entry-plan-id')) {
+                const planIdInput = document.createElement('input');
+                planIdInput.type = 'hidden';
+                planIdInput.id = 'production-entry-plan-id';
+                planIdInput.name = 'planId';
+                productionModalForm.prepend(planIdInput);
+            }
+            
+            // Iniciar atualização automática de OEE em tempo real (a cada 5 minutos)
+            setInterval(updateRealTimeOeeData, 5 * 60 * 1000);
+            
+            // Iniciar atualização automática da timeline (a cada minuto)
+            setInterval(updateTimelineIfVisible, 60 * 1000);
+            
+            // Atualizar imediatamente se estivermos na aba de dashboard ou análise
+            setTimeout(updateRealTimeOeeData, 2000);
+            
+            // Adicionar listener para redimensionar gráficos
+            window.addEventListener('resize', debounce(handleWindowResize, 250));
+            
+            // Final da inicialização - carregar aba de lançamento por padrão
+            loadLaunchPanel();
+            lucide.createIcons();
+        }, 300); // Fim do setTimeout da autenticação
     }
     
     // Função para atualizar dados de OEE em tempo real
@@ -4973,6 +4980,12 @@ document.addEventListener('DOMContentLoaded', function() {
             btnDowntime.addEventListener('click', toggleDowntime);
         }
         
+        // Botão de produção manual
+        const btnManualProduction = document.getElementById('btn-manual-production');
+        if (btnManualProduction) {
+            btnManualProduction.addEventListener('click', openManualProductionModal);
+        }
+
         // Botão de lançamento manual de parada
         const btnManualDowntime = document.getElementById('btn-manual-downtime');
         if (btnManualDowntime) {
@@ -5012,6 +5025,15 @@ document.addEventListener('DOMContentLoaded', function() {
         if (quickDowntimeCancel) quickDowntimeCancel.addEventListener('click', () => closeModal('quick-downtime-modal'));
         if (quickDowntimeForm) quickDowntimeForm.addEventListener('submit', handleDowntimeSubmit);
         
+    // Modal de produção manual
+    const manualProductionClose = document.getElementById('manual-production-close');
+    const manualProductionCancel = document.getElementById('manual-production-cancel');
+    const manualProductionForm = document.getElementById('manual-production-form');
+
+    if (manualProductionClose) manualProductionClose.addEventListener('click', () => closeModal('manual-production-modal'));
+    if (manualProductionCancel) manualProductionCancel.addEventListener('click', () => closeModal('manual-production-modal'));
+    if (manualProductionForm) manualProductionForm.addEventListener('submit', handleManualProductionSubmit);
+
         // Modal de parada manual
         const manualDowntimeClose = document.getElementById('manual-downtime-close');
         const manualDowntimeCancel = document.getElementById('manual-downtime-cancel');
@@ -5041,6 +5063,34 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('quick-losses-modal').classList.remove('hidden');
     }
     
+    function openManualProductionModal() {
+        currentEditContext = null;
+        if (!selectedMachineData) {
+            alert('Selecione uma máquina primeiro.');
+            return;
+        }
+
+        const dateInput = document.getElementById('manual-production-date');
+        if (dateInput) {
+            dateInput.value = getProductionDateString();
+        }
+
+        const shiftSelect = document.getElementById('manual-production-shift');
+        if (shiftSelect) {
+            shiftSelect.value = String(getCurrentShift());
+        }
+
+        const hourInput = document.getElementById('manual-production-hour');
+        if (hourInput) {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            hourInput.value = `${hours}:${minutes}`;
+        }
+
+        openModal('manual-production-modal');
+    }
+
     function closeModal(modalId) {
         document.getElementById(modalId).classList.add('hidden');
         // Limpar formulários
@@ -5160,6 +5210,93 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Handlers dos formulários
+    async function handleManualProductionSubmit(e) {
+        e.preventDefault();
+
+        if (!window.authSystem.checkPermissionForAction('add_production')) {
+            return;
+        }
+
+        if (!selectedMachineData) {
+            alert('Nenhuma máquina selecionada. Selecione uma máquina para registrar a produção.');
+            return;
+        }
+
+        const dateInput = document.getElementById('manual-production-date');
+        const shiftSelect = document.getElementById('manual-production-shift');
+        const hourInput = document.getElementById('manual-production-hour');
+        const qtyInput = document.getElementById('manual-production-qty');
+        const weightInput = document.getElementById('manual-production-weight');
+        const obsInput = document.getElementById('manual-production-obs');
+
+        const dateValue = dateInput?.value || '';
+        const shiftRaw = shiftSelect?.value || '';
+        const hourValue = hourInput?.value || '';
+        const quantityValue = parseInt(qtyInput?.value || '0', 10);
+        const weightValue = parseFloat(weightInput?.value || '0');
+        const observations = (obsInput?.value || '').trim();
+
+        if (!dateValue) {
+            alert('Informe a data referente à produção.');
+            if (dateInput) dateInput.focus();
+            return;
+        }
+
+        if (!Number.isFinite(quantityValue) || quantityValue <= 0) {
+            alert('Informe uma quantidade produzida válida.');
+            if (qtyInput) qtyInput.focus();
+            return;
+        }
+
+        const shiftNumeric = parseInt(shiftRaw, 10);
+        const turno = [1, 2, 3].includes(shiftNumeric) ? shiftNumeric : getCurrentShift();
+
+        const planId = selectedMachineData?.id || null;
+        if (!planId) {
+            alert('Não foi possível identificar o planejamento associado a esta máquina.');
+            return;
+        }
+
+        const currentUser = window.authSystem.getCurrentUser?.() || {};
+        const horaInformada = hourValue && /^\d{2}:\d{2}$/.test(hourValue) ? hourValue : null;
+
+        const payloadBase = {
+            planId,
+            data: dateValue,
+            turno,
+            produzido: quantityValue,
+            peso_bruto: Number.isFinite(weightValue) ? weightValue : 0,
+            refugo_kg: 0,
+            perdas: '',
+            observacoes: observations,
+            machine: selectedMachineData.machine || null,
+            mp: selectedMachineData.mp || '',
+            manual: true,
+            horaInformada,
+            dataHoraInformada: horaInformada ? `${dateValue}T${horaInformada}` : null,
+            registradoPor: currentUser.username || null,
+            registradoPorNome: currentUser.name || null
+        };
+
+        try {
+            await db.collection('production_entries').add({
+                ...payloadBase,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            closeModal('manual-production-modal');
+            await loadHourlyProductionChart();
+            await loadTodayStats();
+            await loadRecentEntries(false);
+
+            showNotification('Produção manual registrada com sucesso!', 'success');
+        } catch (error) {
+            console.error('Erro ao registrar produção manual: ', error);
+            alert('Erro ao registrar produção manual. Tente novamente.');
+        }
+    }
+
     async function handleProductionSubmit(e) {
         e.preventDefault();
         
