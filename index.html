@@ -7,6 +7,7 @@
     <link rel="icon" href="https://i.postimg.cc/B6w5mWry/Design-sem-nome-3.png" type="image/png">
     
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="auth.js"></script>
     <script>
       tailwind.config = {
         theme: {
@@ -25,6 +26,51 @@
         }
       }
     </script>
+    <style>
+      /* CSS customizado para gráficos responsivos */
+      .chart-container {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        min-height: 300px;
+      }
+      
+      .chart-container canvas {
+        max-width: 100% !important;
+        height: auto !important;
+      }
+      
+      /* Garantir que os gráficos ocupem toda a largura disponível */
+      canvas {
+        box-sizing: border-box;
+      }
+      
+      /* Melhorar responsividade em dispositivos móveis */
+      @media (max-width: 768px) {
+        .chart-container {
+          min-height: 250px;
+        }
+      }
+      
+      /* Timeline de progresso com animações suaves */
+      .timeline-progress {
+        animation: progressFill 1.5s ease-out;
+      }
+      
+      @keyframes progressFill {
+        from { width: 0%; }
+        to { width: var(--progress-width); }
+      }
+      
+      /* Melhoria visual para indicadores de status */
+      .status-indicator {
+        transition: all 0.3s ease;
+      }
+      
+      .status-indicator.pulsing {
+        animation: pulse 2s infinite;
+      }
+    </style>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -37,6 +83,8 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <!-- Firebase Firestore -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <!-- Firebase Storage -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
 </head>
 <body class="bg-background-light text-text-dark antialiased">
 
@@ -50,10 +98,10 @@
                 </button>
             </div>
             <nav class="flex-1 px-4 py-6 space-y-2">
-                <a href="#" class="nav-btn active" data-page="planejamento">
+                <a href="#" class="nav-btn" data-page="planejamento">
                     <i data-lucide="clipboard-list"></i><span>Planejamento</span>
                 </a>
-                <a href="#" class="nav-btn" data-page="lancamento">
+                <a href="#" class="nav-btn active" data-page="lancamento">
                     <i data-lucide="keyboard"></i><span>Lançamento</span>
                 </a>
                 <a href="#" class="nav-btn" data-page="analise">
@@ -64,25 +112,21 @@
 
         <!-- Conteúdo Principal -->
         <main class="flex-1 flex flex-col overflow-hidden">
-            <header class="bg-white border-b border-gray-200 p-4 flex items-center justify-between no-print h-16">
+                <header class="bg-white border-b border-gray-200 p-4 flex items-center no-print h-16 relative">
                  <div class="flex items-center">
-                    <button id="sidebar-open-btn" class="p-1 text-gray-600 hover:text-text-dark md:hidden">
-                        <i data-lucide="menu" class="w-6 h-6"></i>
+                    <button id="sidebar-open-btn" type="button" class="hamburger-btn md:hidden" aria-label="Abrir menu" aria-expanded="false">
+                        <span></span>
+                        <span></span>
+                        <span></span>
                     </button>
-                    <h2 id="page-title" class="text-xl font-semibold text-text-dark ml-2">Planejamento</h2>
+                    <h2 id="page-title" class="text-xl font-semibold text-text-dark ml-2">Lançamento</h2>
                  </div>
-                 <div class="flex items-center gap-4">
-                    <button id="firebase-test-btn" class="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 flex items-center gap-1">
-                        <i data-lucide="database" class="w-4 h-4"></i>
-                        Testar Firebase
-                    </button>
-                    <img src="https://i.postimg.cc/wMZh3m85/Gemini-Generated-Image-gdpgb8gdpgb8gdpg-removebg-preview.png" alt="Logo Hokkaido Synchro" class="h-16">
-                 </div>
+                      <img src="https://i.postimg.cc/h47TKP4d/logosynchro.png" alt="Logo Hokkaido Synchro" class="absolute top-2 right-4 h-10 md:h-14 object-contain">
             </header>
 
             <div class="flex-1 overflow-y-auto p-2 sm:p-6">
                 <!-- PÁGINA: Planejamento -->
-                <div id="planejamento-page" class="page-content space-y-6">
+                <div id="planejamento-page" class="page-content hidden space-y-6">
                     <div class="bg-white p-6 md:p-8 rounded-lg shadow-lg border-t-4 border-accent-1">
                         <h2 class="text-2xl font-bold mb-4 flex items-center gap-2"><i data-lucide="clipboard-list" class="text-accent-1"></i>Planejar Produção do Dia</h2>
                         <form id="planning-form" class="space-y-5 pt-4">
@@ -195,7 +239,7 @@
                 </div>
 
                 <!-- PÁGINA: Lançamento -->
-                <div id="lancamento-page" class="page-content hidden space-y-4 md:space-y-6">
+                <div id="lancamento-page" class="page-content space-y-4 md:space-y-6">
                     <!-- Seletor de Máquina -->
                     <div class="bg-gradient-to-r from-blue-500 to-blue-600 p-4 md:p-6 rounded-xl shadow-lg text-white">
                         <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -216,10 +260,10 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="mt-4">
-                            <select id="machine-selector" class="w-full p-2 md:p-3 rounded-lg bg-white text-gray-800 font-medium shadow-md text-sm md:text-base">
-                                <option value="">Selecione uma máquina...</option>
-                            </select>
+                        <div class="mt-4 space-y-3">
+                            <select id="machine-selector" class="hidden"></select>
+                            <div id="machine-card-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4"></div>
+                            <p id="machine-card-empty" class="hidden text-xs md:text-sm text-blue-100">Nenhuma máquina planejada para hoje.</p>
                         </div>
                     </div>
 
@@ -273,8 +317,45 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="relative h-64 md:h-80">
-                                <canvas id="hourly-production-chart"></canvas>
+                            <div class="relative h-80 md:h-180">
+                                <canvas id="hourly-production-chart" class="w-full h-full"></canvas>
+                            </div>
+                            
+                            <!-- Barra de Timeline - Planejado vs Executado -->
+                            <div class="mt-6 bg-gray-50 p-4 rounded-lg">
+                                <h4 class="text-sm font-semibold text-gray-700 mb-3">Timeline de Execução</h4>
+                                <div class="space-y-3">
+                                    <!-- Barra de Progresso -->
+                                    <div class="relative">
+                                        <div class="text-xs text-gray-600 mb-1 flex justify-between">
+                                            <span>Progresso da Meta</span>
+                                            <span id="timeline-percentage">0%</span>
+                                        </div>
+                                        <div class="w-full bg-gray-200 rounded-full h-4 relative overflow-hidden">
+                                            <!-- Fundo da meta planejada -->
+                                            <div class="absolute inset-0 bg-blue-100"></div>
+                                            <!-- Barra de progresso executado -->
+                                            <div id="timeline-progress" class="h-full bg-gradient-to-r from-green-400 to-green-600 rounded-full transition-all duration-1000 ease-out" style="width: 0%"></div>
+                                            <!-- Indicador da meta esperada para o horário atual -->
+                                            <div id="timeline-target-indicator" class="absolute top-0 h-full w-0.5 bg-red-500 transition-all duration-500" style="left: 0%"></div>
+                                        </div>
+                                        <div class="flex justify-between text-xs text-gray-500 mt-1">
+                                            <span id="timeline-executed">0 peças</span>
+                                            <span id="timeline-planned">0 peças</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Indicadores de Status -->
+                                    <div class="flex items-center justify-between text-xs">
+                                        <div class="flex items-center gap-2">
+                                            <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse" id="timeline-status-indicator"></div>
+                                            <span id="timeline-status-text" class="text-gray-600">Atualizando...</span>
+                                        </div>
+                                        <div class="text-gray-500" id="timeline-last-update">
+                                            Última atualização: --:--
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -531,23 +612,14 @@
                             </div>
 
                             <!-- Gráficos de Visão Geral -->
-                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 mb-6 md:mb-8">
+                            <div class="grid grid-cols-1 gap-4 md:gap-6 mb-6 md:mb-8">
                                 <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
                                     <h3 class="text-base md:text-lg font-semibold mb-4 flex items-center gap-2">
                                         <i data-lucide="pie-chart" class="w-4 h-4 md:w-5 md:h-5 text-primary-blue"></i>
                                         <span class="text-sm md:text-base">Distribuição OEE por Máquina</span>
                                     </h3>
                                     <div class="relative" style="height: 250px;">
-                                        <canvas id="oee-distribution-chart"></canvas>
-                                    </div>
-                                </div>
-                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
-                                    <h3 class="text-base md:text-lg font-semibold mb-4 flex items-center gap-2">
-                                        <i data-lucide="activity" class="w-4 h-4 md:w-5 md:h-5 text-green-600"></i>
-                                        <span class="text-sm md:text-base">Tendência OEE (Últimos 7 dias)</span>
-                                    </h3>
-                                    <div class="relative" style="height: 250px;">
-                                        <canvas id="oee-trend-overview"></canvas>
+                                        <canvas id="oee-distribution-chart" class="w-full h-full"></canvas>
                                     </div>
                                 </div>
                             </div>
@@ -578,10 +650,17 @@
                                     </div>
                                 </div>
                                 <div class="bg-white p-6 rounded-lg shadow-lg border">
-                                    <div class="flex items-center justify-between">
+                                    <div class="flex items-start justify-between">
                                         <div>
-                                            <p class="text-gray-600 text-sm">Taxa de Produção</p>
-                                            <p id="production-rate" class="text-2xl font-bold text-green-600">--- pcs/h</p>
+                                            <div class="flex items-center gap-2">
+                                                <p class="text-gray-600 text-sm">Taxa de Produção</p>
+                                                <div class="flex rounded-md overflow-hidden border border-green-200 text-xs font-semibold">
+                                                    <button type="button" id="production-rate-mode-day" class="px-2 py-1 bg-green-600 text-white focus:outline-none">Dia</button>
+                                                    <button type="button" id="production-rate-mode-shift" class="px-2 py-1 bg-white text-green-600 focus:outline-none hover:bg-green-50">Turno</button>
+                                                </div>
+                                            </div>
+                                            <p id="production-rate-value" class="text-2xl font-bold text-green-600 mt-2">--- pcs/h</p>
+                                            <p id="production-rate-subtext" class="text-xs text-gray-500 mt-1"></p>
                                         </div>
                                         <i data-lucide="zap" class="w-8 h-8 text-green-500"></i>
                                     </div>
@@ -602,19 +681,19 @@
                                 <div class="bg-white p-6 rounded-lg shadow-lg border">
                                     <h3 class="text-lg font-semibold mb-4">Produção por Hora</h3>
                                     <div class="chart-container">
-                                        <canvas id="hourly-production-chart"></canvas>
+                                        <canvas id="hourly-production-chart" class="w-full h-full"></canvas>
                                     </div>
                                 </div>
                                 <div class="bg-white p-6 rounded-lg shadow-lg border">
                                     <h3 class="text-lg font-semibold mb-4">Produção por Turno</h3>
                                     <div class="chart-container">
-                                        <canvas id="shift-production-chart"></canvas>
+                                        <canvas id="shift-production-chart" class="w-full h-full"></canvas>
                                     </div>
                                 </div>
                                 <div class="bg-white p-6 rounded-lg shadow-lg border lg:col-span-2">
                                     <h3 class="text-lg font-semibold mb-4">Histórico de Produção por Máquina</h3>
                                     <div class="chart-container" style="height: 400px;">
-                                        <canvas id="machine-production-timeline"></canvas>
+                                        <canvas id="machine-production-timeline" class="w-full h-full"></canvas>
                                     </div>
                                 </div>
                             </div>
@@ -627,7 +706,7 @@
                                 <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
                                     <h4 class="text-base md:text-lg font-semibold mb-4 text-green-600">Disponibilidade</h4>
                                     <div class="relative mx-auto" style="max-width: 200px; height: 200px;">
-                                        <canvas id="availability-gauge"></canvas>
+                                        <canvas id="availability-gauge" class="w-full h-full"></canvas>
                                         <div class="absolute inset-0 flex items-center justify-center">
                                             <span id="availability-value" class="text-xl md:text-2xl font-bold text-green-600">---%</span>
                                         </div>
@@ -636,7 +715,7 @@
                                 <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
                                     <h4 class="text-base md:text-lg font-semibold mb-4 text-blue-600">Performance</h4>
                                     <div class="relative mx-auto" style="max-width: 200px; height: 200px;">
-                                        <canvas id="performance-gauge"></canvas>
+                                        <canvas id="performance-gauge" class="w-full h-full"></canvas>
                                         <div class="absolute inset-0 flex items-center justify-center">
                                             <span id="performance-value" class="text-xl md:text-2xl font-bold text-blue-600">---%</span>
                                         </div>
@@ -645,7 +724,7 @@
                                 <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
                                     <h4 class="text-base md:text-lg font-semibold mb-4 text-yellow-600">Qualidade</h4>
                                     <div class="relative mx-auto" style="max-width: 200px; height: 200px;">
-                                        <canvas id="quality-gauge"></canvas>
+                                        <canvas id="quality-gauge" class="w-full h-full"></canvas>
                                         <div class="absolute inset-0 flex items-center justify-center">
                                             <span id="quality-value" class="text-xl md:text-2xl font-bold text-yellow-600">---%</span>
                                         </div>
@@ -657,7 +736,7 @@
                             <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border mb-6">
                                 <h3 class="text-base md:text-lg font-semibold mb-4">Evolução dos Componentes OEE</h3>
                                 <div class="relative" style="height: 300px;">
-                                    <canvas id="oee-components-timeline"></canvas>
+                                    <canvas id="oee-components-timeline" class="w-full h-full"></canvas>
                                 </div>
                             </div>
 
@@ -672,6 +751,16 @@
 
                         <!-- Análise de Perdas -->
                         <div id="losses-view" class="analysis-view p-4 md:p-6 hidden">
+                            <!-- Botão para Registrar Perda -->
+                            <div class="mb-6 flex gap-2">
+                                <button onclick="openModal('quick-losses-modal')" class="px-4 py-2 md:px-6 md:py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition flex items-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                                    </svg>
+                                    Registrar Perda com Foto
+                                </button>
+                            </div>
+
                             <!-- Resumo de Perdas -->
                             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
                                 <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
@@ -705,25 +794,25 @@
                                 <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
                                     <h3 class="text-base md:text-lg font-semibold mb-4">Pareto de Perdas por Motivo</h3>
                                     <div class="relative" style="height: 300px;">
-                                        <canvas id="losses-pareto-chart"></canvas>
+                                        <canvas id="losses-pareto-chart" class="w-full h-full"></canvas>
                                     </div>
                                 </div>
                                 <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
                                     <h3 class="text-base md:text-lg font-semibold mb-4">Perdas por Máquina</h3>
                                     <div class="relative" style="height: 300px;">
-                                        <canvas id="losses-by-machine-chart"></canvas>
+                                        <canvas id="losses-by-machine-chart" class="w-full h-full"></canvas>
                                     </div>
                                 </div>
                                 <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
                                     <h3 class="text-base md:text-lg font-semibold mb-4">Perdas por Tipo de MP</h3>
                                     <div class="relative" style="height: 300px;">
-                                        <canvas id="losses-by-material-chart"></canvas>
+                                        <canvas id="losses-by-material-chart" class="w-full h-full"></canvas>
                                     </div>
                                 </div>
                                 <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border lg:col-span-2">
                                     <h3 class="text-base md:text-lg font-semibold mb-4">Tendência de Perdas</h3>
                                     <div class="relative" style="height: 350px;">
-                                        <canvas id="losses-trend-chart"></canvas>
+                                        <canvas id="losses-trend-chart" class="w-full h-full"></canvas>
                                     </div>
                                 </div>
                             </div>
@@ -764,13 +853,13 @@
                                 <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
                                     <h3 class="text-base md:text-lg font-semibold mb-4">Paradas por Motivo</h3>
                                     <div class="relative" style="height: 300px;">
-                                        <canvas id="downtime-reasons-chart"></canvas>
+                                        <canvas id="downtime-reasons-chart" class="w-full h-full"></canvas>
                                     </div>
                                 </div>
                                 <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
                                     <h3 class="text-base md:text-lg font-semibold mb-4">Paradas por Máquina</h3>
                                     <div class="relative" style="height: 300px;">
-                                        <canvas id="downtime-by-machine-chart"></canvas>
+                                        <canvas id="downtime-by-machine-chart" class="w-full h-full"></canvas>
                                     </div>
                                 </div>
                                 <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border lg:col-span-2">
@@ -1069,6 +1158,11 @@
                     <label class="block text-sm font-medium text-gray-700 mb-2">Observações</label>
                     <textarea id="quick-losses-obs" rows="2" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" placeholder="Observações sobre a perda"></textarea>
                 </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Foto do problema (opcional)</label>
+                    <input type="file" id="quick-losses-photo" accept="image/*" capture="environment" class="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-600 hover:file:bg-orange-100">
+                    <p class="text-xs text-gray-500 mt-1">Tire uma foto no momento ou selecione da galeria para registrar a evidência.</p>
+                </div>
                 <div class="flex gap-3 pt-4">
                     <button type="button" id="quick-losses-cancel" class="flex-1 py-3 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium">
                         Cancelar
@@ -1153,6 +1247,11 @@
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Observações</label>
                     <textarea id="quick-downtime-obs" name="observations" rows="2" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent" placeholder="Observações sobre a parada"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Foto do problema (opcional)</label>
+                    <input type="file" id="quick-downtime-photo" accept="image/*" capture="environment" class="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-red-50 file:text-red-600 hover:file:bg-red-100">
+                    <p class="text-xs text-gray-500 mt-1">Registre evidências da parada diretamente com a câmera do dispositivo.</p>
                 </div>
                 <div class="flex gap-3 pt-4">
                     <button type="button" id="quick-downtime-cancel" class="flex-1 py-3 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium">
@@ -1248,6 +1347,11 @@
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Observações</label>
                     <textarea id="manual-downtime-obs" name="observations" rows="2" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" placeholder="Observações sobre a parada"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Foto do problema (opcional)</label>
+                    <input type="file" id="manual-downtime-photo" accept="image/*" capture="environment" class="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-600 hover:file:bg-orange-100">
+                    <p class="text-xs text-gray-500 mt-1">Anexe fotos da ocorrência para facilitar a análise posterior.</p>
                 </div>
                 <div class="flex gap-3 pt-4">
                     <button type="button" id="manual-downtime-cancel" class="flex-1 py-3 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium">
