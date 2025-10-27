@@ -285,10 +285,54 @@ document.addEventListener('DOMContentLoaded', function() {
         return baseDate.toISOString().split('T')[0];
     }
 
+    function normalizeToDate(value) {
+        if (!value) return null;
+        if (value instanceof Date) {
+            return Number.isNaN(value.getTime()) ? null : value;
+        }
+        if (value && typeof value.toDate === 'function') {
+            const converted = value.toDate();
+            return converted instanceof Date && !Number.isNaN(converted.getTime()) ? converted : null;
+        }
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    function resolveProductionDateTime(raw) {
+        if (!raw || typeof raw !== 'object') return null;
+
+        const candidates = [];
+
+        if (raw.dataHoraInformada) {
+            candidates.push(raw.dataHoraInformada);
+        }
+
+        if (raw.horaInformada && (raw.data || raw.date)) {
+            candidates.push(`${raw.data || raw.date}T${raw.horaInformada}`);
+        }
+
+        if (raw.datetime) {
+            candidates.push(raw.datetime);
+        }
+
+        candidates.push(raw.timestamp);
+        candidates.push(raw.createdAt);
+        candidates.push(raw.updatedAt);
+
+        for (const candidate of candidates) {
+            const dateObj = normalizeToDate(candidate);
+            if (dateObj) {
+                return dateObj;
+            }
+        }
+
+        return null;
+    }
+
     function getWorkDayFromTimestamp(timestamp) {
-        if (!timestamp) return null;
-        const dateObj = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-        if (!(dateObj instanceof Date) || Number.isNaN(dateObj.getTime())) return null;
+        const dateObj = normalizeToDate(timestamp);
+        if (!(dateObj instanceof Date)) return null;
+        if (Number.isNaN(dateObj.getTime())) return null;
         const isoString = new Date(dateObj.getTime() - dateObj.getTimezoneOffset() * 60000).toISOString();
         const [datePart, timePart] = isoString.split('T');
         return getWorkDay(datePart, timePart?.substring(0, 5));
@@ -1246,7 +1290,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 item?.raw?.endTime,
                 item?.raw?.hora,
                 item?.raw?.hour,
-                item?.raw?.time
+                item?.raw?.time,
+                item?.raw?.horaInformada
             ];
             for (const time of timeCandidates) {
                 const shiftNum = determineShiftFromTime(time);
@@ -1266,6 +1311,10 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             if (item?.raw?.updatedAt?.toDate) {
                 dateCandidates.push(item.raw.updatedAt.toDate());
+            }
+            const resolvedDate = resolveProductionDateTime(item.raw);
+            if (resolvedDate) {
+                dateCandidates.push(resolvedDate);
             }
             for (const date of dateCandidates) {
                 const shiftNum = determineShiftFromDate(date);
@@ -1991,16 +2040,18 @@ document.addEventListener('DOMContentLoaded', function() {
                     mapper: (id, raw) => {
                         const mappedDate = raw.data || raw.date || '';
                         const primaryTimestamp = raw.timestamp || raw.createdAt || raw.updatedAt;
-                        const timestamp = primaryTimestamp?.toDate?.() || null;
-                        const timeHint = raw.hora || raw.hour || raw.time || null;
-                        const workDay = getWorkDayFromTimestamp(primaryTimestamp) || getWorkDay(mappedDate, timeHint);
+                        const resolvedDateTime = resolveProductionDateTime(raw);
+                        const timestamp = resolvedDateTime || normalizeToDate(primaryTimestamp);
+                        const timeHint = raw.horaInformada || raw.hora || raw.hour || raw.time || null;
+                        const workDay = getWorkDayFromTimestamp(resolvedDateTime || primaryTimestamp) || getWorkDay(mappedDate, timeHint);
+                        const isoDateTime = timestamp ? new Date(timestamp.getTime() - timestamp.getTimezoneOffset() * 60000).toISOString() : null;
                         return {
                             id,
                             date: mappedDate,
                             machine: raw.machine || raw.machineRef || raw.machine_id || null,
                             quantity: Number(raw.produzido ?? raw.quantity ?? 0) || 0,
                             shift: normalizeShift(raw.turno ?? raw.shift),
-                            datetime: timestamp ? timestamp.toISOString() : null,
+                            datetime: isoDateTime,
                             mp: raw.mp || '',
                             workDay: workDay || mappedDate,
                             raw
@@ -2013,8 +2064,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     mapper: (id, raw) => {
                         const dateValue = raw.data || raw.date || '';
                         const primaryTimestamp = raw.timestamp || raw.createdAt || raw.updatedAt;
-                        const timeHint = raw.hora || raw.hour || raw.time || null;
-                        const workDay = getWorkDayFromTimestamp(primaryTimestamp) || getWorkDay(dateValue, timeHint);
+                        const resolvedDateTime = resolveProductionDateTime(raw);
+                        const timeHint = raw.horaInformada || raw.hora || raw.hour || raw.time || null;
+                        const workDay = getWorkDayFromTimestamp(resolvedDateTime || primaryTimestamp) || getWorkDay(dateValue, timeHint);
                         return {
                             id,
                             date: dateValue,
@@ -4874,13 +4926,15 @@ document.addEventListener('DOMContentLoaded', function() {
             // Adicionar dados reais de produção
             productionSnapshot.forEach(doc => {
                 const data = doc.data();
-                const timestamp = data.timestamp?.toDate();
-                if (timestamp) {
-                    const hour = String(timestamp.getHours()).padStart(2, '0') + ':00';
-                    if (hourlyData[hour]) {
-                        hourlyData[hour].actual += data.produzido || 0;
-                    }
+                const prodDate = resolveProductionDateTime(data);
+                if (!prodDate) {
+                    return;
                 }
+                const hour = String(prodDate.getHours()).padStart(2, '0') + ':00';
+                if (!hourlyData[hour]) {
+                    hourlyData[hour] = { planned: hourlyTarget, actual: 0 };
+                }
+                hourlyData[hour].actual += data.produzido || 0;
             });
             
             renderHourlyChart(hourlyData);
@@ -6059,14 +6113,14 @@ document.addEventListener('DOMContentLoaded', function() {
             productionSnapshot.forEach(doc => {
                 const data = doc.data();
                 const type = (data.refugo_kg && data.refugo_kg > 0) || data.perdas ? 'loss' : 'production';
-                const timestamp = data.updatedAt?.toDate?.() || data.timestamp?.toDate?.() || data.createdAt?.toDate?.() || (data.datetime ? new Date(data.datetime) : null);
+                const resolvedTimestamp = resolveProductionDateTime(data) || data.updatedAt?.toDate?.() || data.timestamp?.toDate?.() || data.createdAt?.toDate?.() || (data.datetime ? new Date(data.datetime) : null);
 
                 const entry = {
                     id: doc.id,
                     type,
                     collection: 'production_entries',
                     data,
-                    timestamp
+                    timestamp: resolvedTimestamp
                 };
 
                 entries.push(entry);
@@ -6080,7 +6134,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             downtimeSnapshot.forEach(doc => {
                 const data = doc.data();
-                const timestamp = data.createdAt?.toDate?.() || data.timestamp?.toDate?.() || (data.startTime ? new Date(`${data.date}T${data.startTime}`) : null);
+                const timestamp = data.createdAt?.toDate?.() || data.timestamp?.toDate?.() || resolveProductionDateTime(data) || (data.startTime ? new Date(`${data.date}T${data.startTime}`) : null);
 
                 const entry = {
                     id: doc.id,
@@ -6613,13 +6667,13 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Agregar produção por hora
             productions.forEach(prod => {
-                if (prod.timestamp) {
-                    const prodDate = prod.timestamp.toDate();
-                    const hour = `${String(prodDate.getHours()).padStart(2, '0')}:00`;
-                    if (hourlyData[hour] !== undefined) {
-                        hourlyData[hour] += prod.produzido || 0;
-                    }
+                const prodDate = resolveProductionDateTime(prod);
+                if (!prodDate) return;
+                const hour = `${String(prodDate.getHours()).padStart(2, '0')}:00`;
+                if (hourlyData[hour] === undefined) {
+                    hourlyData[hour] = 0;
                 }
+                hourlyData[hour] += prod.produzido || 0;
             });
             
             // Ordenar horas (7:00 primeiro, depois sequencial)
