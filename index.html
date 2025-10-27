@@ -56,6 +56,11 @@
       .timeline-progress {
         animation: progressFill 1.5s ease-out;
       }
+
+            .timeline-progress-bar {
+                background: linear-gradient(90deg, #ef4444, #f87171);
+                box-shadow: 0 6px 18px rgba(239, 68, 68, 0.25);
+            }
       
       @keyframes progressFill {
         from { width: 0%; }
@@ -331,13 +336,13 @@
                                             <span>Progresso da Meta</span>
                                             <span id="timeline-percentage">0%</span>
                                         </div>
-                                        <div class="w-full bg-gray-200 rounded-full h-4 relative overflow-hidden">
+                                            <div class="w-full bg-gray-200 rounded-full h-4 relative overflow-hidden">
                                             <!-- Fundo da meta planejada -->
-                                            <div class="absolute inset-0 bg-blue-100"></div>
+                                            <div class="absolute inset-0 bg-blue-50"></div>
                                             <!-- Barra de progresso executado -->
-                                            <div id="timeline-progress" class="h-full bg-gradient-to-r from-green-400 to-green-600 rounded-full transition-all duration-1000 ease-out" style="width: 0%"></div>
+                                            <div id="timeline-progress" class="timeline-progress timeline-progress-bar h-full rounded-full transition-all duration-1000 ease-out" style="width: 0%"></div>
                                             <!-- Indicador da meta esperada para o horário atual -->
-                                            <div id="timeline-target-indicator" class="absolute top-0 h-full w-0.5 bg-red-500 transition-all duration-500" style="left: 0%"></div>
+                                            <div id="timeline-target-indicator" class="absolute top-0 h-full w-0.5 bg-slate-500 transition-all duration-500" style="left: 0%"></div>
                                         </div>
                                         <div class="flex justify-between text-xs text-gray-500 mt-1">
                                             <span id="timeline-executed">0 peças</span>
