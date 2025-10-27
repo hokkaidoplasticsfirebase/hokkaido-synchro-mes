@@ -168,6 +168,8 @@ document.addEventListener('DOMContentLoaded', function() {
     let selectedMachineData = null;
     let hourlyChartInstance = null;
     let productionTimer = null;
+    let productionTimerBaseSeconds = 0;
+    let productionTimerResumeTimestamp = null;
     let currentDowntimeStart = null;
     let downtimeTimer = null;
     let machineStatus = 'running'; // 'running' ou 'stopped'
@@ -230,6 +232,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const productName = document.getElementById('product-name');
     const productMp = document.getElementById('product-mp');
     const shiftTarget = document.getElementById('shift-target');
+    const productionTimeDisplay = document.getElementById('production-time');
     const producedToday = document.getElementById('produced-today');
     const efficiencyToday = document.getElementById('efficiency-today');
     const lossesToday = document.getElementById('losses-today');
@@ -340,6 +343,76 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const PRODUCTION_DAY_START_HOUR = 7;
     const HOURS_IN_PRODUCTION_DAY = 24;
+
+    const PROGRESS_PALETTE = {
+        danger: { start: '#ef4444', end: '#f87171', textClass: 'text-red-600' },
+        warning: { start: '#f59e0b', end: '#fbbf24', textClass: 'text-amber-500' },
+        success: { start: '#10b981', end: '#34d399', textClass: 'text-emerald-600' }
+    };
+
+    function hexToRgb(hex) {
+        if (!hex) return { r: 0, g: 0, b: 0 };
+        const normalized = hex.replace('#', '');
+        const expanded = normalized.length === 3
+            ? normalized.split('').map((char) => char + char).join('')
+            : normalized.padEnd(6, '0');
+        const value = parseInt(expanded, 16);
+        return {
+            r: (value >> 16) & 255,
+            g: (value >> 8) & 255,
+            b: value & 255
+        };
+    }
+
+    function rgbToHex({ r, g, b }) {
+        const clamp = (value) => Math.max(0, Math.min(255, Math.round(value)));
+        const toHex = (value) => clamp(value).toString(16).padStart(2, '0');
+        return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+    }
+
+    function mixHexColors(hexA, hexB, factor = 0) {
+        const ratio = Math.max(0, Math.min(1, factor));
+        const colorA = hexToRgb(hexA);
+        const colorB = hexToRgb(hexB);
+        const mixChannel = (channel) => colorA[channel] + (colorB[channel] - colorA[channel]) * ratio;
+        return rgbToHex({
+            r: mixChannel('r'),
+            g: mixChannel('g'),
+            b: mixChannel('b')
+        });
+    }
+
+    function resolveProgressPalette(percent = 0) {
+        const clamped = Math.max(0, percent);
+        if (clamped >= 85) {
+            return {
+                start: PROGRESS_PALETTE.success.start,
+                end: PROGRESS_PALETTE.success.end,
+                textClass: PROGRESS_PALETTE.success.textClass
+            };
+        }
+
+        if (clamped <= 60) {
+            const ratio = Math.min(clamped / 60, 1);
+            return {
+                start: mixHexColors(PROGRESS_PALETTE.danger.start, PROGRESS_PALETTE.warning.start, ratio),
+                end: mixHexColors(PROGRESS_PALETTE.danger.end, PROGRESS_PALETTE.warning.end, ratio),
+                textClass: clamped >= 45 ? PROGRESS_PALETTE.warning.textClass : PROGRESS_PALETTE.danger.textClass
+            };
+        }
+
+        const transitionRatio = Math.min((clamped - 60) / 25, 1);
+        return {
+            start: mixHexColors(PROGRESS_PALETTE.warning.start, PROGRESS_PALETTE.success.start, transitionRatio),
+            end: mixHexColors(PROGRESS_PALETTE.warning.end, PROGRESS_PALETTE.success.end, transitionRatio),
+            textClass: clamped >= 75 ? PROGRESS_PALETTE.success.textClass : PROGRESS_PALETTE.warning.textClass
+        };
+    }
+
+    function hexWithAlpha(hex, alpha) {
+        const { r, g, b } = hexToRgb(hex);
+        return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
+    }
 
     function formatHourLabel(hourValue) {
         const normalized = ((hourValue % 24) + 24) % 24;
@@ -2221,6 +2294,16 @@ document.addEventListener('DOMContentLoaded', function() {
         return Math.floor(date.getTime() / 60000);
     }
 
+    function combineDateAndTime(dateStr, timeStr) {
+        if (!dateStr || !timeStr) return null;
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const [hour, minute] = timeStr.split(':').map(Number);
+        if ([year, month, day, hour, minute].some(value => Number.isNaN(value))) {
+            return null;
+        }
+        return new Date(year, (month || 1) - 1, day || 1, hour || 0, minute || 0, 0, 0);
+    }
+
     function calculateHoursInPeriod(startDate, endDate) {
         if (!startDate || !endDate) return 0;
 
@@ -2467,6 +2550,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Calcular percentuais
         const executedPercentage = planned > 0 ? Math.min((executed / planned) * 100, 100) : 0;
         const expectedPercentage = planned > 0 ? Math.min((expectedByNow / planned) * 100, 100) : 0;
+        const palette = resolveProgressPalette(executedPercentage);
 
         // Animar barra de progresso
         setTimeout(() => {
@@ -2474,9 +2558,18 @@ document.addEventListener('DOMContentLoaded', function() {
             targetIndicator.style.left = `${expectedPercentage}%`;
         }, 100);
 
+        progressBar.classList.add('timeline-progress');
+        progressBar.style.background = `linear-gradient(90deg, ${palette.start}, ${palette.end})`;
+        progressBar.style.boxShadow = `0 6px 18px ${hexWithAlpha(palette.end, 0.35)}`;
+        targetIndicator.style.backgroundColor = palette.end;
+
         // Atualizar textos
         if (percentageText) {
             percentageText.textContent = `${executedPercentage.toFixed(1)}%`;
+            percentageText.classList.remove('text-red-600', 'text-amber-500', 'text-emerald-600', 'text-green-600');
+            if (palette.textClass) {
+                percentageText.classList.add(palette.textClass);
+            }
         }
         
         if (executedText) {
@@ -2589,20 +2682,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Recarregar dados de produção atuais
         try {
-            const today = new Date().toISOString().split('T')[0];
-            const productionData = await getFilteredData('production', today, today);
-            
-            if (productionData && productionData.length > 0) {
-                // Recalcular totais
-                const totalExecuted = productionData.reduce((sum, item) => sum + (item.quantity || 0), 0);
-                const dailyTarget = selectedMachineData?.daily_target || 1000;
-                const currentHour = new Date().getHours();
-                const hourlyTarget = Math.round(dailyTarget / 24);
-                const expectedByNow = hourlyTarget * (currentHour + 1);
-                
-                // Atualizar timeline
-                updateTimelineProgress(totalExecuted, dailyTarget, expectedByNow);
+            if (!selectedMachineData) {
+                updateTimelineProgress(0, 0, 0);
+                return;
             }
+
+            const today = new Date().toISOString().split('T')[0];
+            const productionData = await getFilteredData('production', today, today, selectedMachineData.machine || 'all');
+
+            const totalExecuted = productionData.reduce((sum, item) => sum + (item.quantity || 0), 0);
+            const totalPlanned = Number(selectedMachineData.planned_quantity) || 0;
+            const hourlyTarget = totalPlanned / HOURS_IN_PRODUCTION_DAY;
+            const hoursElapsed = getHoursElapsedInProductionDay(new Date());
+            const expectedByNow = Math.min(totalPlanned, hoursElapsed * hourlyTarget);
+
+            updateTimelineProgress(totalExecuted, totalPlanned, expectedByNow);
         } catch (error) {
             console.warn('Erro ao atualizar timeline:', error);
         }
@@ -4359,13 +4453,23 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const render = () => {
             const combinedData = planningItems.map(plan => {
-                const data = { ...plan, T1: {}, T2: {}, T3: {} };
-                ['T1', 'T2', 'T3'].forEach(turno => {
-                    const entries = productionEntries.filter(p => p.planId === plan.id && p.turno === turno);
-                    data[turno] = { produzido: entries.reduce((sum, item) => sum + item.produzido, 0) };
+                const shifts = { T1: 0, T2: 0, T3: 0 };
+
+                productionEntries.forEach(entry => {
+                    if (!entry || entry.planId !== plan.id) return;
+                    const shiftKey = normalizeShiftValue(entry.turno);
+                    if (!shiftKey || !shifts.hasOwnProperty(shiftKey)) return;
+                    const produced = Number(entry.produzido) || 0;
+                    shifts[shiftKey] += produced;
                 });
-                data.total_produzido = (data.T1.produzido || 0) + (data.T2.produzido || 0) + (data.T3.produzido || 0);
-                return data;
+
+                return {
+                    ...plan,
+                    T1: { produzido: shifts.T1 },
+                    T2: { produzido: shifts.T2 },
+                    T3: { produzido: shifts.T3 },
+                    total_produzido: shifts.T1 + shifts.T2 + shifts.T3
+                };
             });
 
             renderPlanningTable(combinedData);
@@ -4907,7 +5011,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 .where('data', '==', today)
                 .where('planId', '==', selectedMachineData.id)
                 .get();
-            
+
             // Preparar dados para o gráfico
             const hourlyData = {};
             for (let i = 7; i < 31; i++) {
@@ -4915,14 +5019,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 const hourStr = String(hour).padStart(2, '0') + ':00';
                 hourlyData[hourStr] = { planned: 0, actual: 0 };
             }
-            
+
             // Calcular produção planejada por hora (meta dividida por 24 horas)
-            const hourlyTarget = (selectedMachineData.planned_quantity || 0) / 24;
-            
+            const totalPlanned = Number(selectedMachineData.planned_quantity) || 0;
+            const hourlyTarget = totalPlanned / HOURS_IN_PRODUCTION_DAY;
+
             Object.keys(hourlyData).forEach(hour => {
                 hourlyData[hour].planned = hourlyTarget;
             });
-            
+
             // Adicionar dados reais de produção
             productionSnapshot.forEach(doc => {
                 const data = doc.data();
@@ -4936,9 +5041,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 hourlyData[hour].actual += data.produzido || 0;
             });
-            
+
+            const totalExecuted = Object.values(hourlyData).reduce((sum, entry) => sum + (entry.actual || 0), 0);
+            const hoursElapsed = getHoursElapsedInProductionDay(new Date());
+            const expectedByNow = Math.min(totalPlanned, hoursElapsed * hourlyTarget);
+
+            updateTimelineProgress(totalExecuted, totalPlanned, expectedByNow);
             renderHourlyChart(hourlyData);
-            
+
         } catch (error) {
             console.error("Erro ao carregar dados do gráfico: ", error);
         }
@@ -5247,6 +5357,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         machineStatus = 'stopped';
         updateMachineStatus();
+        freezeProductionTimer();
         startDowntimeTimer();
         
         showNotification('Máquina parada! Clique em START quando retomar.', 'warning');
@@ -5258,6 +5369,7 @@ document.addEventListener('DOMContentLoaded', function() {
             console.warn('Nenhuma parada ativa para finalizar.');
             machineStatus = 'running';
             updateMachineStatus();
+            resumeProductionTimer();
             return;
         }
         openModal('quick-downtime-modal');
@@ -5720,6 +5832,7 @@ document.addEventListener('DOMContentLoaded', function() {
             machineStatus = 'running';
             updateMachineStatus();
             stopDowntimeTimer();
+            resumeProductionTimer();
             
             closeModal('quick-downtime-modal');
             
@@ -5867,6 +5980,7 @@ document.addEventListener('DOMContentLoaded', function() {
             machineStatus = 'running';
             updateMachineStatus();
             stopDowntimeTimer();
+            resumeProductionTimer();
             
             loadTodayStats();
             await loadRecentEntries(false);
@@ -5883,9 +5997,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Funções auxiliares
-    function getCurrentShift() {
-        const now = new Date();
-        const hour = now.getHours();
+    function getCurrentShift(reference = new Date()) {
+        const hour = reference.getHours();
         
         if (hour >= 7 && hour < 15) {
             return 1; // 1º Turno
@@ -5894,6 +6007,22 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             return 3; // 3º Turno
         }
+    }
+
+    function getShiftStartDateTime(reference = new Date()) {
+        const shift = getCurrentShift(reference);
+        const productionDay = getProductionDateString(reference);
+        const shiftStartMap = {
+            1: '07:00',
+            2: '15:00',
+            3: '23:00'
+        };
+        const startTime = shiftStartMap[shift] || '07:00';
+        const startDate = combineDateAndTime(productionDay, startTime);
+        if (startDate instanceof Date && !Number.isNaN(startDate.getTime())) {
+            return startDate;
+        }
+        return null;
     }
     
     function updateMachineStatus() {
@@ -5933,7 +6062,11 @@ document.addEventListener('DOMContentLoaded', function() {
             const updateTimer = () => {
                 if (!currentDowntimeStart) return;
                 const now = new Date();
-                const start = new Date(`${currentDowntimeStart.date}T${currentDowntimeStart.startTime}`);
+                const start = combineDateAndTime(currentDowntimeStart.date, currentDowntimeStart.startTime);
+                if (!(start instanceof Date) || Number.isNaN(start.getTime())) {
+                    downtimeTimer.textContent = '00:00:00';
+                    return;
+                }
                 let diffSec = Math.floor((now - start) / 1000); // segundos
                 if (diffSec < 0) diffSec = 0;
                 const hours = Math.floor(diffSec / 3600);
@@ -5954,6 +6087,127 @@ document.addEventListener('DOMContentLoaded', function() {
                 clearInterval(downtimeTimer.interval);
             }
         }
+    }
+
+    function formatSecondsToClock(totalSeconds) {
+        const safeSeconds = Math.max(0, Math.floor(totalSeconds || 0));
+        const hours = Math.floor(safeSeconds / 3600);
+        const minutes = Math.floor((safeSeconds % 3600) / 60);
+        const seconds = safeSeconds % 60;
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    function updateProductionTimeDisplay(seconds) {
+        if (!productionTimeDisplay) return;
+        productionTimeDisplay.textContent = formatSecondsToClock(seconds);
+    }
+
+    function clearProductionTimerInterval() {
+        if (productionTimer) {
+            clearInterval(productionTimer);
+            productionTimer = null;
+        }
+    }
+
+    function resetProductionTimer() {
+        productionTimerBaseSeconds = 0;
+        productionTimerResumeTimestamp = null;
+        clearProductionTimerInterval();
+        updateProductionTimeDisplay(0);
+    }
+
+    function freezeProductionTimer() {
+        if (productionTimerResumeTimestamp) {
+            const elapsed = Math.floor((Date.now() - productionTimerResumeTimestamp) / 1000);
+            productionTimerBaseSeconds += Math.max(elapsed, 0);
+            productionTimerResumeTimestamp = null;
+        }
+        clearProductionTimerInterval();
+        updateProductionTimeDisplay(productionTimerBaseSeconds);
+    }
+
+    function resumeProductionTimer() {
+        if (productionTimerResumeTimestamp) {
+            return;
+        }
+        productionTimerResumeTimestamp = Date.now();
+        clearProductionTimerInterval();
+        updateProductionTimeDisplay(productionTimerBaseSeconds);
+        productionTimer = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - productionTimerResumeTimestamp) / 1000);
+            updateProductionTimeDisplay(productionTimerBaseSeconds + Math.max(elapsed, 0));
+        }, 1000);
+    }
+
+    function synchronizeProductionTimer(elapsedSeconds, shouldRun) {
+        productionTimerBaseSeconds = Math.max(0, Math.floor(elapsedSeconds || 0));
+        productionTimerResumeTimestamp = shouldRun ? Date.now() : null;
+        clearProductionTimerInterval();
+        updateProductionTimeDisplay(productionTimerBaseSeconds);
+
+        if (!shouldRun) {
+            return;
+        }
+
+        productionTimer = setInterval(() => {
+            if (!productionTimerResumeTimestamp) {
+                clearProductionTimerInterval();
+                return;
+            }
+            const elapsed = Math.floor((Date.now() - productionTimerResumeTimestamp) / 1000);
+            updateProductionTimeDisplay(productionTimerBaseSeconds + Math.max(elapsed, 0));
+        }, 1000);
+    }
+
+    // Calcula o tempo de produção efetivo do turno atual desconsiderando paradas registradas.
+    function calculateProductionRuntimeSeconds({ shiftStart, now, downtimes = [], activeDowntime = null }) {
+        if (!(shiftStart instanceof Date) || Number.isNaN(shiftStart.getTime())) {
+            return 0;
+        }
+
+        const referenceNow = now instanceof Date ? now : new Date();
+        if (referenceNow <= shiftStart) {
+            return 0;
+        }
+
+        const shiftStartMs = shiftStart.getTime();
+        const nowMs = referenceNow.getTime();
+        let downtimeMillis = 0;
+
+        downtimes.forEach(dt => {
+            if (!dt) return;
+            const start = combineDateAndTime(dt.date, dt.startTime);
+            const end = dt.endTime ? combineDateAndTime(dt.date, dt.endTime) : null;
+            if (!(start instanceof Date) || Number.isNaN(start.getTime())) {
+                return;
+            }
+
+            let effectiveEnd = end;
+            if (!(effectiveEnd instanceof Date) || Number.isNaN(effectiveEnd.getTime()) || effectiveEnd <= start) {
+                const durationMinutes = Number(dt.duration) || 0;
+                effectiveEnd = new Date(start.getTime() + Math.max(durationMinutes, 0) * 60000);
+            }
+
+            const windowStart = Math.max(start.getTime(), shiftStartMs);
+            const windowEnd = Math.min(effectiveEnd.getTime(), nowMs);
+            if (windowEnd > windowStart) {
+                downtimeMillis += windowEnd - windowStart;
+            }
+        });
+
+        if (activeDowntime && activeDowntime.startTime && activeDowntime.date) {
+            const activeStart = combineDateAndTime(activeDowntime.date, activeDowntime.startTime);
+            if (activeStart instanceof Date && !Number.isNaN(activeStart.getTime())) {
+                const windowStart = Math.max(activeStart.getTime(), shiftStartMs);
+                if (nowMs > windowStart) {
+                    downtimeMillis += nowMs - windowStart;
+                }
+            }
+        }
+
+        const elapsedMillis = nowMs - shiftStartMs;
+        const runtimeMillis = Math.max(0, elapsedMillis - downtimeMillis);
+        return Math.floor(runtimeMillis / 1000);
     }
     
     function setRecentEntriesState({ loading = false, empty = false }) {
@@ -6440,16 +6694,30 @@ document.addEventListener('DOMContentLoaded', function() {
     const currentShiftKey = oeeSummary?.currentShift || fallbackShiftKey;
 
         const formatQty = (value) => Number(value || 0).toLocaleString('pt-BR');
+        const machineProgressInfo = {};
 
         machineCardGrid.innerHTML = machineOrder.map(machine => {
             const data = aggregated[machine];
             const plan = data.plan || {};
+            const plannedQty = Number(plan.planned_quantity) || 0;
+            const progressPercentRaw = plannedQty > 0 ? (data.totalProduced / plannedQty) * 100 : 0;
+            const normalizedProgress = Math.max(0, Math.min(progressPercentRaw, 100));
+            const progressPalette = resolveProgressPalette(progressPercentRaw);
+            const progressTextClass = progressPalette.textClass || 'text-slate-600';
+            const progressLabel = progressPercentRaw >= 100 ? Math.round(progressPercentRaw) : Number(progressPercentRaw.toFixed(1));
+            const progressDisplay = `${Number.isFinite(progressLabel) ? progressLabel : 0}%`;
+
+            machineProgressInfo[machine] = {
+                normalizedProgress,
+                progressPercent: progressPercentRaw,
+                palette: progressPalette
+            };
+
             const oeeShiftData = oeeByMachine[machine]?.[currentShiftKey];
             const oeePercent = Math.max(0, Math.min((oeeShiftData?.oee || 0) * 100, 100));
             const oeePercentText = oeePercent ? oeePercent.toFixed(1) : '0.0';
-            const oeeColor = oeePercent >= 85 ? 'text-green-600' : oeePercent >= 70 ? 'text-amber-500' : 'text-red-500';
+            const oeeColorClass = oeePercent >= 85 ? 'text-emerald-600' : oeePercent >= 70 ? 'text-amber-500' : 'text-red-500';
             const chartId = `machine-oee-${machine.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
-            const plannedQty = Number(plan.planned_quantity) || 0;
             const productLine = plan.product ? `<p class="mt-1 text-sm text-slate-600">${plan.product}</p>` : '<p class="mt-1 text-sm text-slate-400">Produto não definido</p>';
             const mpLine = plan.mp ? `<p class="text-xs text-slate-400 mt-1">MP: ${plan.mp}</p>` : '';
             const shiftProduced = data.byShift[currentShiftKey] ?? data.byShift[fallbackShiftKey] ?? 0;
@@ -6465,10 +6733,15 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                         <div class="relative w-20 h-20">
                             <canvas id="${chartId}" class="w-full h-full"></canvas>
-                            <div class="absolute inset-0 flex items-center justify-center">
-                                <span class="text-sm font-semibold ${oeeColor}">${oeePercentText}%</span>
+                            <div class="absolute inset-0 flex flex-col items-center justify-center leading-tight text-center">
+                                <span class="text-sm font-semibold ${progressTextClass}">${progressDisplay}</span>
+                                <span class="text-[10px] uppercase tracking-wide text-slate-400">Meta</span>
                             </div>
                         </div>
+                    </div>
+                    <div class="mt-2 text-xs text-slate-500 flex items-center gap-1">
+                        <span>OEE turno:</span>
+                        <span class="font-semibold ${oeeColorClass}">${oeePercentText}%</span>
                     </div>
                     <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
                         <div>
@@ -6499,18 +6772,23 @@ document.addEventListener('DOMContentLoaded', function() {
             const canvas = document.getElementById(chartId);
             if (!canvas) return;
 
-            const oeeShiftData = oeeByMachine[machine]?.[currentShiftKey];
-            const oeePercent = Math.max(0, Math.min((oeeShiftData?.oee || 0) * 100, 100));
-            const accomplishedColor = oeePercent >= 85 ? '#10B981' : oeePercent >= 70 ? '#F59E0B' : '#EF4444';
-            const remainingColor = 'rgba(226, 232, 240, 0.7)';
+            const progressInfo = machineProgressInfo[machine] || { normalizedProgress: 0, palette: resolveProgressPalette(0) };
+            const ctx = canvas.getContext('2d');
+            const bounds = canvas.getBoundingClientRect();
+            const gradient = ctx.createLinearGradient(0, 0, bounds.width || canvas.width || 120, bounds.height || canvas.height || 120);
+            gradient.addColorStop(0, progressInfo.palette.start);
+            gradient.addColorStop(1, progressInfo.palette.end);
+
+            const progressValue = Math.max(0, Math.min(progressInfo.normalizedProgress, 100));
+            const remainingValue = Math.max(0, 100 - progressValue);
 
             machineCardCharts[machine] = new Chart(canvas, {
                 type: 'doughnut',
                 data: {
-                    labels: ['OEE', 'Restante'],
+                    labels: ['Executado', 'Restante'],
                     datasets: [{
-                        data: [oeePercent, Math.max(0, 100 - oeePercent)],
-                        backgroundColor: [accomplishedColor, remainingColor],
+                        data: [progressValue, remainingValue],
+                        backgroundColor: [gradient, 'rgba(226, 232, 240, 0.65)'],
                         borderWidth: 0,
                         hoverOffset: 4,
                         cutout: '72%',
@@ -6592,11 +6870,14 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Função para quando uma máquina é selecionada
     async function onMachineSelected(machine) {
+        const previousMachine = selectedMachineData ? selectedMachineData.machine : null;
         const machineData = machineCardData[machine] || machineSelector?.machineData?.[machine];
 
         if (!machine || !machineData) {
             productionControlPanel.classList.add('hidden');
             selectedMachineData = null;
+            setActiveMachineCard(null);
+            resetProductionTimer();
             if (recentEntriesList) {
                 recentEntriesList.innerHTML = '';
             }
@@ -6604,7 +6885,6 @@ document.addEventListener('DOMContentLoaded', function() {
             setRecentEntriesState({ loading: false, empty: true });
             if (productMp) productMp.textContent = 'Matéria-prima não definida';
             return;
-            setActiveMachineCard(null);
         }
         
         selectedMachineData = machineData;
@@ -6612,6 +6892,10 @@ document.addEventListener('DOMContentLoaded', function() {
             machineSelector.value = machine;
         }
         setActiveMachineCard(machine);
+
+        if (previousMachine !== selectedMachineData.machine) {
+            resetProductionTimer();
+        }
         
         // Atualizar informações da máquina
         if (machineIcon) machineIcon.textContent = machine;
@@ -6768,6 +7052,24 @@ document.addEventListener('DOMContentLoaded', function() {
             if (efficiencyToday) efficiencyToday.textContent = `${efficiency.toFixed(1)}%`;
             if (lossesToday) lossesToday.textContent = totalLosses.toFixed(2);
             if (downtimeToday) downtimeToday.textContent = totalDowntime;
+
+            const shiftReference = new Date();
+            const shiftStart = getShiftStartDateTime(shiftReference);
+            const activeDowntime = (machineStatus === 'stopped' && currentDowntimeStart && currentDowntimeStart.machine === selectedMachineData.machine)
+                ? currentDowntimeStart
+                : null;
+
+            if (shiftStart) {
+                const runtimeSeconds = calculateProductionRuntimeSeconds({
+                    shiftStart,
+                    now: shiftReference,
+                    downtimes,
+                    activeDowntime
+                });
+                synchronizeProductionTimer(runtimeSeconds, machineStatus === 'running');
+            } else {
+                resetProductionTimer();
+            }
             
         } catch (error) {
             console.error("Erro ao carregar estatísticas: ", error);
