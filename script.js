@@ -143,6 +143,25 @@ document.addEventListener('DOMContentLoaded', function() {
     let collectionToDelete = null;
     let fullDashboardData = { perdas: [] };
     let paretoChartInstance, productionTimelineChartInstance, oeeByShiftChartInstance, oeeTrendChartInstance;
+    const gaugeChartInstances = {};
+    const gaugeChartStyles = {
+        'availability-gauge': {
+            color: '#10B981',
+            warningColor: '#F59E0B',
+            dangerColor: '#EF4444'
+        },
+        'performance-gauge': {
+            color: '#3B82F6',
+            warningColor: '#8B5CF6',
+            dangerColor: '#EF4444'
+        },
+        'quality-gauge': {
+            color: '#F59E0B',
+            warningColor: '#F97316',
+            dangerColor: '#EF4444'
+        }
+    };
+    const DEFAULT_DONUT_COLORS = ['#10B981', '#3B82F6', '#F97316', '#8B5CF6', '#F59E0B', '#EC4899', '#14B8A6', '#EF4444'];
     let currentReportData = [];
     
     // Variáveis do novo painel de lançamento
@@ -156,6 +175,9 @@ document.addEventListener('DOMContentLoaded', function() {
     let allRecentEntries = []; // Armazenar todas as entradas para filtro
     let currentEntryFilter = 'all'; // Filtro atual: 'all', 'production', 'downtime', 'loss'
     let currentEditContext = null;
+    let machineCardData = {};
+    const machineCardCharts = {};
+    let activeMachineCard = null;
 
     let cachedProductionDataset = {
         productionData: [],
@@ -198,6 +220,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const productionModalTitle = document.getElementById('production-modal-title');
     // Elementos do novo painel de lançamento
     const machineSelector = document.getElementById('machine-selector');
+    const machineCardGrid = document.getElementById('machine-card-grid');
+    const machineCardEmptyState = document.getElementById('machine-card-empty');
     const productionControlPanel = document.getElementById('production-control-panel');
     const hourlyProductionChart = document.getElementById('hourly-production-chart');
     const currentShiftDisplay = document.getElementById('current-shift-display');
@@ -231,12 +255,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const machineFilter = document.getElementById('machine-filter');
     const refreshDashboardBtn = document.getElementById('refresh-dashboard-btn');
     
-    const chartToggleProdBtn = document.getElementById('chart-toggle-prod');
-    const chartToggleOeeBtn = document.getElementById('chart-toggle-oee');
-    const chartToggleTrendBtn = document.getElementById('chart-toggle-trend');
-    const productionChartContainer = document.getElementById('production-chart-container');
-    const oeeChartContainer = document.getElementById('oee-chart-container');
-    const oeeTrendContainer = document.getElementById('oee-trend-container');
     const graphMachineFilter = document.getElementById('graph-machine-filter');
 
     // --- FUNÇÕES UTILITÁRIAS ---
@@ -274,6 +292,68 @@ document.addEventListener('DOMContentLoaded', function() {
         const isoString = new Date(dateObj.getTime() - dateObj.getTimezoneOffset() * 60000).toISOString();
         const [datePart, timePart] = isoString.split('T');
         return getWorkDay(datePart, timePart?.substring(0, 5));
+    }
+
+    const PRODUCTION_DAY_START_HOUR = 7;
+    const HOURS_IN_PRODUCTION_DAY = 24;
+
+    function formatHourLabel(hourValue) {
+        const normalized = ((hourValue % 24) + 24) % 24;
+        return `${String(normalized).padStart(2, '0')}:00`;
+    }
+
+    function getProductionHoursOrder() {
+        const ordered = [];
+        for (let hour = PRODUCTION_DAY_START_HOUR; hour < 24; hour++) {
+            ordered.push(formatHourLabel(hour));
+        }
+        for (let hour = 0; hour < PRODUCTION_DAY_START_HOUR; hour++) {
+            ordered.push(formatHourLabel(hour));
+        }
+        return ordered;
+    }
+
+    function getProductionHourLabel(date = new Date()) {
+        return formatHourLabel(date.getHours());
+    }
+
+    function getHoursElapsedInProductionDay(date = new Date()) {
+        const reference = new Date(date);
+        if (Number.isNaN(reference.getTime())) return 0;
+
+        const productionStart = new Date(reference);
+        if (productionStart.getHours() < PRODUCTION_DAY_START_HOUR) {
+            productionStart.setDate(productionStart.getDate() - 1);
+        }
+        productionStart.setHours(PRODUCTION_DAY_START_HOUR, 0, 0, 0);
+
+        const diffMs = Math.max(0, reference.getTime() - productionStart.getTime());
+        const elapsedHours = Math.floor(diffMs / (60 * 60 * 1000));
+        const clamped = Math.min(elapsedHours + 1, HOURS_IN_PRODUCTION_DAY);
+        return Math.max(0, clamped);
+    }
+
+    function normalizeShiftValue(value) {
+        if (value === undefined || value === null) return null;
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            return `T${value}`;
+        }
+        const str = String(value).toUpperCase();
+        const match = str.match(/T?\s*(\d)/);
+        return match ? `T${match[1]}` : null;
+    }
+
+    function formatShiftLabel(shiftKey) {
+        switch (shiftKey) {
+            case 'T1':
+                return '1º Turno';
+            case 'T2':
+                return '2º Turno';
+            case 'T3':
+                return '3º Turno';
+            default:
+                return 'Turno atual';
+        }
     }
 
     function getGroupedLossReasons() {
@@ -613,6 +693,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- INITIALIZATION ---
     function init() {
+        // Verificar autenticação primeiro
+        if (!window.authSystem || !window.authSystem.getCurrentUser()) {
+            window.location.href = 'login.html';
+            return;
+        }
+        
+        // Atualizar interface com informações do usuário
+        window.authSystem.updateUserInterface();
+        
         setTodayDate();
         setupEventListeners();
         setupPlanningTab();
@@ -647,11 +736,17 @@ document.addEventListener('DOMContentLoaded', function() {
         // Iniciar atualização automática de OEE em tempo real (a cada 5 minutos)
         setInterval(updateRealTimeOeeData, 5 * 60 * 1000);
         
+        // Iniciar atualização automática da timeline (a cada minuto)
+        setInterval(updateTimelineIfVisible, 60 * 1000);
+        
         // Atualizar imediatamente se estivermos na aba de dashboard ou análise
         setTimeout(updateRealTimeOeeData, 2000);
         
-        // Final da inicialização
-        listenToPlanningChanges(getProductionDateString());
+        // Adicionar listener para redimensionar gráficos
+        window.addEventListener('resize', debounce(handleWindowResize, 250));
+        
+        // Final da inicialização - carregar aba de lançamento por padrão
+        loadLaunchPanel();
         lucide.createIcons();
     }
     
@@ -723,14 +818,15 @@ document.addEventListener('DOMContentLoaded', function() {
     function setupLaunchTab() {
         console.log('🔧 Configurando aba de lançamento...');
         
-        // Event listeners para o seletor de máquina
-        if (machineSelector) {
-            machineSelector.addEventListener('change', (e) => {
-                onMachineSelected(e.target.value);
+        if (machineCardGrid && !machineCardGrid.dataset.listenerAttached) {
+            machineCardGrid.addEventListener('click', async (event) => {
+                const card = event.target.closest('.machine-card');
+                if (!card) return;
+                const machine = card.dataset.machine;
+                if (!machine) return;
+                await onMachineSelected(machine);
             });
-            console.log('✅ Event listener do seletor de máquina configurado');
-        } else {
-            console.log('❌ Seletor de máquina não encontrado');
+            machineCardGrid.dataset.listenerAttached = 'true';
         }
         
         // Event listeners para os botões de ação
@@ -1097,8 +1193,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
         // Gerar gráficos
-        await generateOEEDistributionChart(productionData, lossesData, downtimeData);
-        await generateOEETrendChart(startDate, endDate);
+    await generateOEEDistributionChart(productionData, lossesData, downtimeData);
     }
 
     function aggregateOeeMetrics(productionData, lossesData, downtimeData, planData, shiftFilter = 'all') {
@@ -1687,7 +1782,6 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const chartTests = [
             { name: 'OEE Distribution', canvasId: 'oee-distribution-chart', view: 'overview' },
-            { name: 'OEE Trend', canvasId: 'oee-trend-overview', view: 'overview' },
             { name: 'Hourly Production', canvasId: 'hourly-production-chart', view: 'production' },
             { name: 'Shift Production', canvasId: 'shift-production-chart', view: 'production' },
             { name: 'OEE Components Timeline', canvasId: 'oee-components-timeline', view: 'efficiency' },
@@ -1776,6 +1870,102 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Configurações responsivas globais para gráficos
+    function getResponsiveChartOptions() {
+        const isMobile = window.innerWidth < 768;
+        const isTablet = window.innerWidth < 1024;
+        
+        return {
+            responsive: true,
+            maintainAspectRatio: false,
+            devicePixelRatio: window.devicePixelRatio || 1,
+            scales: {
+                x: {
+                    grid: {
+                        display: !isMobile,
+                        color: 'rgba(0, 0, 0, 0.05)'
+                    },
+                    ticks: {
+                        font: {
+                            size: isMobile ? 8 : isTablet ? 10 : 12
+                        },
+                        maxRotation: isMobile ? 45 : 0,
+                        minRotation: 0,
+                        autoSkip: true,
+                        maxTicksLimit: isMobile ? 8 : isTablet ? 12 : 16
+                    }
+                },
+                y: {
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.05)'
+                    },
+                    ticks: {
+                        font: {
+                            size: isMobile ? 9 : isTablet ? 11 : 12
+                        },
+                        maxTicksLimit: isMobile ? 6 : 8
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: isMobile ? 'bottom' : 'top',
+                    labels: {
+                        font: {
+                            size: isMobile ? 10 : isTablet ? 11 : 12
+                        },
+                        usePointStyle: true,
+                        padding: isMobile ? 10 : 20,
+                        boxWidth: isMobile ? 8 : 12
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    titleColor: 'white',
+                    bodyColor: 'white',
+                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                    borderWidth: 1,
+                    titleFont: {
+                        size: isMobile ? 11 : 12
+                    },
+                    bodyFont: {
+                        size: isMobile ? 10 : 11
+                    },
+                    padding: isMobile ? 6 : 10
+                }
+            },
+            layout: {
+                padding: {
+                    top: isMobile ? 5 : 10,
+                    right: isMobile ? 5 : 10,
+                    bottom: isMobile ? 5 : 10,
+                    left: isMobile ? 5 : 10
+                }
+            }
+        };
+    }
+
+    // Função para mesclar configurações específicas com as responsivas
+    function mergeChartOptions(specificOptions = {}) {
+        const baseOptions = getResponsiveChartOptions();
+        
+        // Função helper para merge profundo
+        function deepMerge(target, source) {
+            for (const key in source) {
+                if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+                    target[key] = target[key] || {};
+                    deepMerge(target[key], source[key]);
+                } else {
+                    target[key] = source[key];
+                }
+            }
+            return target;
+        }
+        
+        return deepMerge(JSON.parse(JSON.stringify(baseOptions)), specificOptions);
+    }
+
     async function getFilteredData(collection, startDate, endDate, machine = 'all', shift = 'all') {
         try {
             console.log('[TRACE][getFilteredData] called', { collection, startDate, endDate, machine, shift });
@@ -1822,11 +2012,11 @@ document.addEventListener('DOMContentLoaded', function() {
                             id,
                             date: dateValue,
                             machine: raw.machine || raw.machineRef || raw.machine_id || null,
-                            quantity: Number(raw.refugo_kg ?? raw.quantity ?? 0) || 0,
+                            quantity: Number(raw.refugo_qty ?? raw.refugo_kg ?? raw.quantity ?? 0) || 0,
                             shift: normalizeShift(raw.turno ?? raw.shift),
                             reason: raw.perdas || raw.reason || '',
                             mp: raw.mp || '',
-                            mp_type: raw.mp_type || '',
+                            mp_type: raw.mp_type || raw.mp || '',
                             workDay: workDay || dateValue,
                             raw
                         };
@@ -2096,123 +2286,16 @@ document.addEventListener('DOMContentLoaded', function() {
             oeeByMachine[machine] = (availability * quality * performance) / 10000;
         });
 
-        new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: Object.keys(oeeByMachine),
-                datasets: [{
-                    data: Object.values(oeeByMachine),
-                    backgroundColor: [
-                        '#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#F97316'
-                    ],
-                    borderWidth: 2,
-                    borderColor: '#ffffff'
-                }]
-            },
-            options: {
-                responsive: true,
+        const labels = Object.keys(oeeByMachine);
+        const values = Object.values(oeeByMachine).map(value => Number((value || 0) * 100));
 
-                plugins: {
-                    legend: {
-                        position: window.innerWidth < 768 ? 'bottom' : 'right',
-                        labels: {
-                            padding: 10,
-                            font: {
-                                size: window.innerWidth < 768 ? 10 : 12
-                            }
-                        }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return `${context.label}: ${context.parsed.toFixed(1)}%`;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    // Gráfico de tendência OEE
-    async function generateOEETrendChart(startDate, endDate) {
-        const ctx = document.getElementById('oee-trend-overview');
-        if (!ctx) return;
-
-        destroyChart('oee-trend-overview');
-
-        // Gerar dados dos últimos 7 dias
-        const dates = [];
-        const oeeValues = [];
-        
-        for (let i = 6; i >= 0; i--) {
-            const date = new Date();
-            date.setDate(date.getDate() - i);
-            const dateStr = date.toISOString().split('T')[0];
-            dates.push(date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }));
-            
-            // Simular dados OEE para demo
-            const oee = 65 + Math.random() * 25; // OEE entre 65% e 90%
-            oeeValues.push(oee);
-        }
-
-        new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: dates,
-                datasets: [{
-                    label: 'OEE %',
-                    data: oeeValues,
-                    borderColor: '#10B981',
-                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.4,
-                    pointRadius: window.innerWidth < 768 ? 2 : 4,
-                    pointHoverRadius: window.innerWidth < 768 ? 4 : 6
-                }]
-            },
-            options: {
-                responsive: true,
-
-                scales: {
-                    y: {
-                        beginAtZero: false,
-                        min: 50,
-                        max: 100,
-                        ticks: {
-                            callback: function(value) {
-                                return value + '%';
-                            },
-                            font: {
-                                size: window.innerWidth < 768 ? 10 : 12
-                            }
-                        }
-                    },
-                    x: {
-                        ticks: {
-                            font: {
-                                size: window.innerWidth < 768 ? 9 : 11
-                            },
-                            maxRotation: window.innerWidth < 768 ? 45 : 0,
-                            minRotation: window.innerWidth < 768 ? 45 : 0
-                        }
-                    }
-                },
-                plugins: {
-                    legend: {
-                        display: false
-                    },
-                    tooltip: {
-                        titleFont: {
-                            size: window.innerWidth < 768 ? 11 : 13
-                        },
-                        bodyFont: {
-                            size: window.innerWidth < 768 ? 10 : 12
-                        }
-                    }
-                }
-            }
+        renderModernDonutChart({
+            canvasId: 'oee-distribution-chart',
+            labels,
+            data: values,
+            colors: ['#10B981', '#3B82F6', '#F97316', '#8B5CF6', '#F59E0B', '#EC4899'],
+            datasetLabel: 'OEE %',
+            tooltipFormatter: (context) => `${context.label}: ${context.parsed.toFixed(1)}%`
         });
     }
 
@@ -2258,78 +2341,213 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Gráfico de produção por hora
     async function generateHourlyProductionChart(productionData) {
-        const ctx = document.getElementById('hourly-production-chart');
-        if (!ctx) return;
+        const canvas = document.getElementById('hourly-production-chart');
+        if (!canvas) return;
 
-        destroyChart('hourly-production-chart');
+        if (hourlyChartInstance) {
+            hourlyChartInstance.destroy();
+            hourlyChartInstance = null;
+        }
 
-        if (productionData.length === 0) {
+        if (!Array.isArray(productionData) || productionData.length === 0) {
             showNoDataMessage('hourly-production-chart');
+            updateTimelineProgress(0, 0, 0);
             return;
         }
-        
+
         clearNoDataMessage('hourly-production-chart');
 
-        const hours = Array.from({length: 24}, (_, i) => `${i.toString().padStart(2, '0')}:00`);
-        const hourlyData = new Array(24).fill(0);
+        const orderedHours = getProductionHoursOrder();
+        const executedByHour = Object.fromEntries(orderedHours.map(label => [label, 0]));
 
-        // Agrupar produção por hora
         productionData.forEach(item => {
-            if (item.datetime) {
-                const hour = new Date(item.datetime).getHours();
-                hourlyData[hour] += item.quantity;
-            }
+            if (!item?.datetime) return;
+            const eventDate = new Date(item.datetime);
+            if (Number.isNaN(eventDate.getTime())) return;
+            const label = formatHourLabel(eventDate.getHours());
+            executedByHour[label] = (executedByHour[label] || 0) + (Number(item.quantity) || 0);
         });
 
-        new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: hours,
-                datasets: [{
-                    label: 'Peças',
-                    data: hourlyData,
-                    backgroundColor: '#3B82F6',
-                    borderColor: '#1E40AF',
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            font: {
-                                size: window.innerWidth < 768 ? 9 : 11
-                            }
-                        }
-                    },
-                    x: {
-                        ticks: {
-                            font: {
-                                size: window.innerWidth < 768 ? 8 : 10
-                            },
-                            maxRotation: 45,
-                            minRotation: 45
-                        }
-                    }
-                },
-                plugins: {
-                    legend: {
-                        display: false
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return `${context.parsed.y} pcs`;
-                            }
-                        }
-                    }
-                }
-            }
+        const dailyTarget = Number(selectedMachineData?.daily_target) || 1000;
+        const hourlyTarget = dailyTarget / HOURS_IN_PRODUCTION_DAY;
+
+        const executedSeries = orderedHours.map(label => executedByHour[label] || 0);
+        const plannedSeries = orderedHours.map(() => hourlyTarget);
+
+        const totalExecuted = executedSeries.reduce((sum, value) => sum + value, 0);
+        const totalPlanned = dailyTarget;
+        const hoursElapsed = getHoursElapsedInProductionDay(new Date());
+        const expectedByNow = Math.min(hoursElapsed * hourlyTarget, totalPlanned);
+
+        hourlyChartInstance = createHourlyProductionChart({
+            canvas,
+            labels: orderedHours,
+            executedPerHour: executedSeries,
+            plannedPerHour: plannedSeries,
+            highlightCurrentHour: true
         });
+
+        // Atualizar timeline de progresso
+        updateTimelineProgress(totalExecuted, totalPlanned, expectedByNow);
+
     }
 
+    // Função para atualizar a barra de timeline
+    function updateTimelineProgress(executed, planned, expectedByNow) {
+        const progressBar = document.getElementById('timeline-progress');
+        const targetIndicator = document.getElementById('timeline-target-indicator');
+        const percentageText = document.getElementById('timeline-percentage');
+        const executedText = document.getElementById('timeline-executed');
+        const plannedText = document.getElementById('timeline-planned');
+        const statusIndicator = document.getElementById('timeline-status-indicator');
+        const statusText = document.getElementById('timeline-status-text');
+        const lastUpdateText = document.getElementById('timeline-last-update');
+
+        if (!progressBar || !targetIndicator) return;
+
+        // Calcular percentuais
+        const executedPercentage = planned > 0 ? Math.min((executed / planned) * 100, 100) : 0;
+        const expectedPercentage = planned > 0 ? Math.min((expectedByNow / planned) * 100, 100) : 0;
+
+        // Animar barra de progresso
+        setTimeout(() => {
+            progressBar.style.width = `${executedPercentage}%`;
+            targetIndicator.style.left = `${expectedPercentage}%`;
+        }, 100);
+
+        // Atualizar textos
+        if (percentageText) {
+            percentageText.textContent = `${executedPercentage.toFixed(1)}%`;
+        }
+        
+        if (executedText) {
+            executedText.textContent = `${executed.toLocaleString()} peças`;
+        }
+        
+        if (plannedText) {
+            plannedText.textContent = `${planned.toLocaleString()} peças`;
+        }
+
+        // Determinar status
+        let status = 'on-track';
+        let statusMessage = 'No prazo';
+        let indicatorClass = 'bg-green-500 animate-pulse';
+
+        if (executed < expectedByNow * 0.8) {
+            status = 'behind';
+            statusMessage = 'Atrasado';
+            indicatorClass = 'bg-red-500 animate-pulse';
+        } else if (executed > expectedByNow * 1.2) {
+            status = 'ahead';
+            statusMessage = 'Adiantado';
+            indicatorClass = 'bg-blue-500 animate-pulse';
+        }
+
+        // Atualizar indicador de status
+        if (statusIndicator) {
+            statusIndicator.className = `w-2 h-2 rounded-full ${indicatorClass}`;
+        }
+        
+        if (statusText) {
+            statusText.textContent = statusMessage;
+            statusText.className = `text-gray-600 font-medium`;
+            
+            if (status === 'behind') {
+                statusText.className = 'text-red-600 font-medium';
+            } else if (status === 'ahead') {
+                statusText.className = 'text-blue-600 font-medium';
+            } else {
+                statusText.className = 'text-green-600 font-medium';
+            }
+        }
+
+        // Atualizar timestamp
+        if (lastUpdateText) {
+            const now = new Date();
+            lastUpdateText.textContent = `Última atualização: ${now.toLocaleTimeString('pt-BR', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            })}`;
+        }
+    }
+
+    // Função de debounce para otimizar redimensionamento
+    function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+
+    // Função para lidar com redimensionamento da janela
+    function handleWindowResize() {
+        // Obter todos os gráficos Chart.js existentes
+        Chart.instances.forEach(chart => {
+            if (chart && chart.resize) {
+                chart.resize();
+            }
+        });
+
+        // Recarregar dados da aba ativa se necessário
+        const activeTab = document.querySelector('.nav-btn.active');
+        if (activeTab) {
+            const activePage = activeTab.getAttribute('data-page');
+            
+            // Só recarregar se for uma aba com gráficos e se houve mudança significativa no tamanho
+            if (['analise', 'lancamento'].includes(activePage)) {
+                // Verificar se mudou entre breakpoints importantes (mobile/desktop)
+                const wasMobile = window.previousWidth < 768;
+                const isMobile = window.innerWidth < 768;
+                
+                if (wasMobile !== isMobile) {
+                    // Recarregar gráficos com novas configurações responsivas
+                    setTimeout(() => {
+                        if (activePage === 'analise') {
+                            loadAnalysisData();
+                        } else if (activePage === 'lancamento') {
+                            loadLaunchPanel();
+                        }
+                    }, 100);
+                }
+            }
+        }
+        
+        // Salvar largura atual para comparação futura
+        window.previousWidth = window.innerWidth;
+    }
+
+    // Função para atualizar timeline apenas se estiver visível
+    async function updateTimelineIfVisible() {
+        const timelineElement = document.getElementById('timeline-progress');
+        if (!timelineElement || timelineElement.offsetParent === null) {
+            return; // Timeline não está visível
+        }
+
+        // Recarregar dados de produção atuais
+        try {
+            const today = new Date().toISOString().split('T')[0];
+            const productionData = await getFilteredData('production', today, today);
+            
+            if (productionData && productionData.length > 0) {
+                // Recalcular totais
+                const totalExecuted = productionData.reduce((sum, item) => sum + (item.quantity || 0), 0);
+                const dailyTarget = selectedMachineData?.daily_target || 1000;
+                const currentHour = new Date().getHours();
+                const hourlyTarget = Math.round(dailyTarget / 24);
+                const expectedByNow = hourlyTarget * (currentHour + 1);
+                
+                // Atualizar timeline
+                updateTimelineProgress(totalExecuted, dailyTarget, expectedByNow);
+            }
+        } catch (error) {
+            console.warn('Erro ao atualizar timeline:', error);
+        }
+    }
     // Gráfico de produção por turno
     async function generateShiftProductionChart(productionData) {
         const ctx = document.getElementById('shift-production-chart');
@@ -2400,7 +2618,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Função para atualizar gauge de eficiência
+    // Função para atualizar gráficos de eficiência em formato doughnut
     function updateGauge(canvasId, percentage) {
         console.log(`[GAUGE] Atualizando ${canvasId} com ${percentage}%`);
         const canvas = document.getElementById(canvasId);
@@ -2409,125 +2627,432 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        const ctx = canvas.getContext('2d');
-        const centerX = canvas.width / 2;
-        const centerY = canvas.height / 2;
-        const radius = 80;
+        const normalizedValue = Math.max(0, Math.min(Number(percentage) || 0, 100));
+        const remainingValue = Math.max(0, 100 - normalizedValue);
+        const style = gaugeChartStyles[canvasId] || { color: '#0F172A' };
+        let activeColor = style.color;
 
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (normalizedValue < 60 && style.dangerColor) {
+            activeColor = style.dangerColor;
+        } else if (normalizedValue < 80 && style.warningColor) {
+            activeColor = style.warningColor;
+        }
 
-        // Background circle
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-        ctx.strokeStyle = '#E5E7EB';
-        ctx.lineWidth = 12;
-        ctx.stroke();
+        const valueElementId = canvasId.replace('-gauge', '-value');
+        const valueElement = document.getElementById(valueElementId);
+        if (valueElement) {
+            valueElement.style.color = activeColor;
+        }
 
-        // Progress arc
-        const angle = (percentage / 100) * 2 * Math.PI;
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, radius, -Math.PI / 2, -Math.PI / 2 + angle);
-        
-        // Color based on percentage
-        if (percentage >= 80) ctx.strokeStyle = '#10B981';
-        else if (percentage >= 60) ctx.strokeStyle = '#F59E0B';
-        else ctx.strokeStyle = '#EF4444';
-        
-        ctx.lineWidth = 12;
-        ctx.lineCap = 'round';
-        ctx.stroke();
-        
-        console.log(`[GAUGE] ${canvasId} atualizado com sucesso`);
-    }
+        if (gaugeChartInstances[canvasId]) {
+            const chart = gaugeChartInstances[canvasId];
+            chart.data.datasets[0].data = [normalizedValue, remainingValue];
+            chart.data.datasets[0].backgroundColor = [
+                activeColor,
+                'rgba(229, 231, 235, 0.45)'
+            ];
+            chart.update();
+            return;
+        }
 
-    // Gráfico Pareto de perdas
-    async function generateLossesParetoChart(lossesData) {
-        const ctx = document.getElementById('losses-pareto-chart');
-        if (!ctx) return;
-
-        destroyChart('losses-pareto-chart');
-
-        const reasonCounts = {};
-        lossesData.forEach(item => {
-            reasonCounts[item.reason] = (reasonCounts[item.reason] || 0) + item.quantity;
-        });
-
-        const sortedReasons = Object.entries(reasonCounts)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 10); // Top 10
-
-        const labels = sortedReasons.map(item => item[0]);
-        const data = sortedReasons.map(item => item[1]);
-        
-        // Calcular percentual acumulado
-        const total = data.reduce((sum, val) => sum + val, 0);
-        const cumulativePercent = [];
-        let cumulative = 0;
-        data.forEach(val => {
-            cumulative += val;
-            cumulativePercent.push((cumulative / total) * 100);
-        });
-
-        new Chart(ctx, {
-            type: 'bar',
+        gaugeChartInstances[canvasId] = new Chart(canvas, {
+            type: 'doughnut',
             data: {
-                labels: labels,
+                labels: ['Atual', 'Restante'],
                 datasets: [{
-                    type: 'bar',
-                    label: 'Quantidade',
-                    data: data,
-                    backgroundColor: 'rgba(239, 68, 68, 0.8)',
-                    borderColor: '#EF4444',
-                    borderWidth: 1,
-                    yAxisID: 'y'
-                }, {
-                    type: 'line',
-                    label: '% Acumulado',
-                    data: cumulativePercent,
-                    borderColor: '#F59E0B',
-                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                    borderWidth: 3,
-                    fill: false,
-                    yAxisID: 'y1'
+                    data: [normalizedValue, remainingValue],
+                    backgroundColor: [
+                        activeColor,
+                        'rgba(229, 231, 235, 0.45)'
+                    ],
+                    borderWidth: 0,
+                    hoverOffset: 4,
+                    borderRadius: 10
                 }]
             },
             options: {
                 responsive: true,
+                maintainAspectRatio: false,
+                cutout: '72%',
+                rotation: -90,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        enabled: false
+                    }
+                },
+                animation: {
+                    animateRotate: true,
+                    duration: 800
+                }
+            }
+        });
+    }
 
+    function renderModernDonutChart({
+        canvasId,
+        labels = [],
+        data = [],
+        colors = DEFAULT_DONUT_COLORS,
+        datasetLabel = '',
+        tooltipFormatter,
+        legendPosition,
+        cutout = '65%'
+    }) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) {
+            console.error(`[DONUT] Canvas "${canvasId}" não encontrado`);
+            return null;
+        }
+
+        const existing = Chart.getChart(canvas);
+        if (existing) existing.destroy();
+
+        const palette = labels.map((_, index) => colors[index % colors.length]);
+        const total = data.reduce((sum, value) => sum + (Number(value) || 0), 0);
+        const isMobile = window.innerWidth < 768;
+        const resolvedLegendPosition = legendPosition || (isMobile ? 'bottom' : 'right');
+
+        const chart = new Chart(canvas, {
+            type: 'doughnut',
+            data: {
+                labels,
+                datasets: [{
+                    label: datasetLabel,
+                    data,
+                    backgroundColor: palette,
+                    borderWidth: 0,
+                    hoverOffset: 6,
+                    borderRadius: 12
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout,
+                rotation: -90,
+                plugins: {
+                    legend: {
+                        position: resolvedLegendPosition,
+                        labels: {
+                            usePointStyle: true,
+                            padding: isMobile ? 10 : 14,
+                            boxWidth: isMobile ? 10 : 12,
+                            font: {
+                                size: isMobile ? 10 : 12
+                            }
+                        }
+                    },
+                    tooltip: {
+                        mode: 'nearest',
+                        callbacks: {
+                            label: tooltipFormatter || ((context) => {
+                                const label = context.label || '';
+                                const value = Number(context.parsed || 0);
+                                if (!total) {
+                                    return `${label}: ${value.toLocaleString()}`;
+                                }
+                                const percentage = ((value / total) * 100).toFixed(1);
+                                return `${label}: ${value.toLocaleString()} (${percentage}%)`;
+                            })
+                        },
+                        backgroundColor: '#0F172A',
+                        borderColor: 'rgba(15, 23, 42, 0.2)',
+                        borderWidth: 1,
+                        titleFont: {
+                            size: isMobile ? 11 : 12
+                        },
+                        bodyFont: {
+                            size: isMobile ? 10 : 11
+                        },
+                        padding: isMobile ? 8 : 10
+                    }
+                },
+                animation: {
+                    animateRotate: true,
+                    animateScale: true,
+                    duration: 900,
+                    easing: 'easeOutQuart'
+                }
+            }
+        });
+
+        return chart;
+    }
+
+    function createHourlyProductionChart({
+        canvas,
+        labels,
+        executedPerHour,
+        plannedPerHour,
+        highlightCurrentHour = false
+    }) {
+        if (!canvas) {
+            console.error('[HOUR-CHART] Canvas não encontrado para renderização.');
+            return null;
+        }
+
+        const ctx = canvas.getContext('2d');
+        const canvasRect = canvas.getBoundingClientRect();
+        const gradientHeight = canvasRect.height || canvas.height || 320;
+
+        const fillGradient = ctx.createLinearGradient(0, 0, 0, gradientHeight);
+        fillGradient.addColorStop(0, 'rgba(16, 185, 129, 0.65)');
+        fillGradient.addColorStop(1, 'rgba(16, 185, 129, 0.1)');
+
+        const executed = executedPerHour.map(value => Number(value) || 0);
+        const planned = plannedPerHour.map(value => Number(value) || 0);
+
+        const executedCumulative = [];
+        const plannedCumulative = [];
+        executed.reduce((sum, value, index) => {
+            const total = sum + value;
+            executedCumulative[index] = total;
+            return total;
+        }, 0);
+        planned.reduce((sum, value, index) => {
+            const total = sum + value;
+            plannedCumulative[index] = total;
+            return total;
+        }, 0);
+
+        let highlightIndex = -1;
+        if (highlightCurrentHour) {
+            const highlightLabel = getProductionHourLabel();
+            highlightIndex = labels.indexOf(highlightLabel);
+        }
+
+        const barBackground = (context) => {
+            if (!context) return fillGradient;
+            const { dataIndex } = context;
+            if (dataIndex === highlightIndex) {
+                return 'rgba(14, 165, 233, 0.85)';
+            }
+            return fillGradient;
+        };
+
+        return new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    {
+                        type: 'bar',
+                        label: 'Executado por Hora',
+                        data: executed,
+                        backgroundColor: barBackground,
+                        borderRadius: 8,
+                        borderSkipped: false,
+                        maxBarThickness: 22,
+                        order: 2,
+                        yAxisID: 'y'
+                    },
+                    {
+                        type: 'line',
+                        label: 'Planejado por Hora',
+                        data: planned,
+                        borderColor: '#3B82F6',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2.5,
+                        tension: 0.35,
+                        pointRadius: 2,
+                        pointHoverRadius: 5,
+                        pointBackgroundColor: '#ffffff',
+                        pointBorderColor: '#3B82F6',
+                        yAxisID: 'y',
+                        order: 3,
+                        fill: false,
+                        borderDash: [6, 6]
+                    },
+                    {
+                        type: 'line',
+                        label: 'Produção Acumulada',
+                        data: executedCumulative,
+                        borderColor: '#10B981',
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.35,
+                        pointRadius: 0,
+                        yAxisID: 'y1',
+                        order: 1
+                    },
+                    {
+                        type: 'line',
+                        label: 'Meta Acumulada',
+                        data: plannedCumulative,
+                        borderColor: '#EF4444',
+                        borderWidth: 2,
+                        borderDash: [8, 6],
+                        fill: false,
+                        tension: 0.25,
+                        pointRadius: 0,
+                        yAxisID: 'y1',
+                        order: 0
+                    }
+                ]
+            },
+            options: mergeChartOptions({
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+                layout: {
+                    padding: {
+                        top: 8,
+                        bottom: 0,
+                        left: 6,
+                        right: 12
+                    }
+                },
                 scales: {
                     y: {
-                        type: 'linear',
-                        display: true,
-                        position: 'left',
-                        beginAtZero: true
-                    },
-                    y1: {
-                        type: 'linear',
-                        display: true,
-                        position: 'right',
-                        min: 0,
-                        max: 100,
+                        beginAtZero: true,
                         grid: {
-                            drawOnChartArea: false,
+                            color: 'rgba(148, 163, 184, 0.18)',
+                            drawBorder: false
                         },
                         ticks: {
-                            callback: function(value) {
-                                return value + '%';
-                            }
+                            callback: (value) => `${Number(value).toLocaleString()} pcs`
+                        }
+                    },
+                    y1: {
+                        beginAtZero: true,
+                        position: 'right',
+                        grid: {
+                            drawOnChartArea: false
+                        },
+                        ticks: {
+                            callback: (value) => `${Number(value).toLocaleString()} pcs`
                         }
                     }
                 },
                 plugins: {
                     legend: {
-                        position: window.innerWidth < 768 ? 'bottom' : 'top',
+                        position: 'top',
+                        align: 'center',
                         labels: {
-                            font: {
-                                size: window.innerWidth < 768 ? 10 : 12
+                            usePointStyle: true,
+                            padding: 14
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title: (tooltipItems) => `Hora ${tooltipItems[0].label}`,
+                            label: (context) => {
+                                const label = context.dataset.label || '';
+                                const rawValue = context.parsed?.y ?? context.parsed ?? 0;
+                                const suffix = label.includes('Acumulada') ? ' peças acumuladas' : ' peças';
+                                return `${label}: ${Number(rawValue).toLocaleString()}${suffix}`;
                             }
                         }
                     }
                 }
-            }
+            })
+        });
+    }
+
+    // Gráfico Pareto de perdas
+    async function generateLossesParetoChart(lossesData) {
+        const canvas = document.getElementById('losses-pareto-chart');
+        if (!canvas) return;
+
+        destroyChart('losses-pareto-chart');
+
+        if (!Array.isArray(lossesData) || lossesData.length === 0) {
+            showNoDataMessage('losses-pareto-chart');
+            return;
+        }
+
+        clearNoDataMessage('losses-pareto-chart');
+
+        const aggregated = {};
+        lossesData.forEach(item => {
+            const reason = item?.reason || item?.category || item?.type || 'Sem classificação';
+            const quantity = Number(item?.quantity) || 0;
+            aggregated[reason] = (aggregated[reason] || 0) + quantity;
+        });
+
+        const sortedEntries = Object.entries(aggregated).sort((a, b) => b[1] - a[1]);
+        const labels = sortedEntries.map(([label]) => label);
+        const values = sortedEntries.map(([, value]) => value);
+        const total = values.reduce((sum, value) => sum + value, 0);
+
+        const cumulativePercentages = [];
+        values.reduce((sum, value, index) => {
+            const accumulated = sum + value;
+            cumulativePercentages[index] = total ? (accumulated / total) * 100 : 0;
+            return accumulated;
+        }, 0);
+
+        new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    {
+                        type: 'bar',
+                        label: 'Perdas (kg)',
+                        data: values,
+                        backgroundColor: 'rgba(239, 68, 68, 0.85)',
+                        borderColor: '#B91C1C',
+                        borderWidth: 1,
+                        yAxisID: 'y'
+                    },
+                    {
+                        type: 'line',
+                        label: '% Acumulado',
+                        data: cumulativePercentages,
+                        borderColor: '#0EA5E9',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        pointRadius: 3,
+                        pointHoverRadius: 5,
+                        yAxisID: 'y1'
+                    }
+                ]
+            },
+            options: mergeChartOptions({
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Perdas (kg)'
+                        }
+                    },
+                    y1: {
+                        beginAtZero: true,
+                        suggestedMax: 100,
+                        position: 'right',
+                        grid: {
+                            drawOnChartArea: false
+                        },
+                        ticks: {
+                            callback: (value) => `${value}%`
+                        },
+                        title: {
+                            display: true,
+                            text: '% Acumulado'
+                        }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => {
+                                if (context.dataset.type === 'line') {
+                                    return `${context.dataset.label}: ${context.parsed.y.toFixed(1)}%`;
+                                }
+                                return `${context.dataset.label}: ${Number(context.parsed.y).toLocaleString()} kg`;
+                            }
+                        }
+                    }
+                }
+            })
         });
     }
 
@@ -2632,54 +3157,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Cores para diferentes tipos de MP
         const colors = [
-            'rgba(59, 130, 246, 0.8)',   // Azul
-            'rgba(16, 185, 129, 0.8)',   // Verde
-            'rgba(245, 158, 11, 0.8)',   // Laranja
-            'rgba(239, 68, 68, 0.8)',    // Vermelho
-            'rgba(139, 92, 246, 0.8)',   // Roxo
-            'rgba(236, 72, 153, 0.8)',   // Rosa
-            'rgba(20, 184, 166, 0.8)',   // Teal
-            'rgba(251, 191, 36, 0.8)',   // Amarelo
+            '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'
         ];
+        const totalLosses = data.reduce((sum, value) => sum + value, 0);
 
-        new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Perdas (kg)',
-                    data: data,
-                    backgroundColor: colors.slice(0, labels.length),
-                    borderWidth: 2,
-                    borderColor: '#fff'
-                }]
-            },
-            options: {
-                responsive: true,
-
-                plugins: {
-                    legend: {
-                        position: isMobile ? 'bottom' : 'right',
-                        labels: {
-                            font: {
-                                size: isMobile ? 10 : 12
-                            },
-                            padding: isMobile ? 8 : 10,
-                            boxWidth: isMobile ? 12 : 15
-                        }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                const label = context.label || '';
-                                const value = context.parsed || 0;
-                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                const percentage = ((value / total) * 100).toFixed(1);
-                                return `${label}: ${value.toFixed(2)} kg (${percentage}%)`;
-                            }
-                        }
-                    }
-                }
+        renderModernDonutChart({
+            canvasId: 'losses-by-material-chart',
+            labels,
+            data,
+            colors,
+            datasetLabel: 'Perdas (kg)',
+            legendPosition: isMobile ? 'bottom' : 'right',
+            tooltipFormatter: (context) => {
+                const value = Number(context.parsed || 0);
+                const percentage = totalLosses > 0 ? ((value / totalLosses) * 100).toFixed(1) : '0.0';
+                return `${context.label}: ${value.toFixed(2)} kg (${percentage}%)`;
             }
         });
     }
@@ -2783,51 +3275,22 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
         const labels = Object.keys(reasonDurations);
-        const data = Object.values(reasonDurations).map(d => (d / 60).toFixed(1)); // Converter para horas
+        const data = Object.values(reasonDurations).map(d => Number(((d || 0) / 60).toFixed(2))); // Converter para horas
 
         const isMobile = window.innerWidth < 768;
+        const totalHours = data.reduce((sum, value) => sum + value, 0);
 
-        new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: labels,
-                datasets: [{
-                    data: data,
-                    backgroundColor: [
-                        '#EF4444',
-                        '#F59E0B',
-                        '#10B981',
-                        '#3B82F6',
-                        '#8B5CF6',
-                        '#EC4899',
-                        '#14B8A6',
-                        '#F97316'
-                    ],
-                    borderWidth: 2,
-                    borderColor: '#fff'
-                }]
-            },
-            options: {
-                responsive: true,
-
-                plugins: {
-                    legend: {
-                        position: isMobile ? 'bottom' : 'right',
-                        labels: {
-                            font: {
-                                size: isMobile ? 10 : 12
-                            },
-                            padding: isMobile ? 8 : 10
-                        }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return context.label + ': ' + context.parsed + 'h';
-                            }
-                        }
-                    }
-                }
+        renderModernDonutChart({
+            canvasId: 'downtime-reasons-chart',
+            labels,
+            data,
+            colors: ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'],
+            datasetLabel: 'Paradas (h)',
+            legendPosition: isMobile ? 'bottom' : 'right',
+            tooltipFormatter: (context) => {
+                const value = Number(context.parsed || 0);
+                const percentage = totalHours > 0 ? ((value / totalHours) * 100).toFixed(1) : '0.0';
+                return `${context.label}: ${value.toFixed(1)} h (${percentage}%)`;
             }
         });
     }
@@ -3520,9 +3983,6 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
 
-        if (chartToggleProdBtn) chartToggleProdBtn.addEventListener('click', () => toggleDashboardChart('prod'));
-        if (chartToggleOeeBtn) chartToggleOeeBtn.addEventListener('click', () => toggleDashboardChart('oee'));
-        if (chartToggleTrendBtn) chartToggleTrendBtn.addEventListener('click', () => toggleDashboardChart('trend'));
 
         if (confirmModal) {
             document.getElementById('confirm-modal-cancel-btn').addEventListener('click', hideConfirmModal);
@@ -3580,6 +4040,12 @@ document.addEventListener('DOMContentLoaded', function() {
         e.preventDefault();
         const page = e.currentTarget.dataset.page;
         
+        // Verificar se o usuário tem permissão para acessar esta aba
+        if (!window.authSystem.canAccessTab(page)) {
+            window.authSystem.showPermissionError();
+            return;
+        }
+        
         navButtons.forEach(btn => btn.classList.remove('active'));
         e.currentTarget.classList.add('active');
         
@@ -3620,6 +4086,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (sidebar && sidebarOverlay) {
             sidebar.classList.remove('-translate-x-full');
             sidebarOverlay.classList.remove('hidden');
+            if (sidebarOpenBtn) {
+                sidebarOpenBtn.classList.add('is-active');
+                sidebarOpenBtn.setAttribute('aria-expanded', 'true');
+            }
         }
     }
 
@@ -3627,6 +4097,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (sidebar && sidebarOverlay) {
             sidebar.classList.add('-translate-x-full');
             sidebarOverlay.classList.add('hidden');
+            if (sidebarOpenBtn) {
+                sidebarOpenBtn.classList.remove('is-active');
+                sidebarOpenBtn.setAttribute('aria-expanded', 'false');
+            }
         }
     }
 
@@ -3730,6 +4204,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     async function handlePlanningFormSubmit(e) {
         e.preventDefault();
+        
+        // Verificar permissão
+        if (!window.authSystem.checkPermissionForAction('create_planning')) {
+            return;
+        }
+        
         const form = e.target;
         const formData = new FormData(form);
         const data = Object.fromEntries(formData.entries());
@@ -3831,6 +4311,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             renderPlanningTable(combinedData);
             renderLeaderPanel(planningItems);
+            renderMachineCards(planningItems, productionEntries);
             showLoadingState('leader-panel', false, planningItems.length === 0);
         };
 
@@ -4313,87 +4794,24 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- ABA DE LANÇAMENTO INTERATIVO ---
     
     function setupLaunchTab() {
-        // Configurar seletor de máquina
-        if (machineSelector) {
-            populateMachineSelector();
-            machineSelector.addEventListener('change', handleMachineSelection);
+        populateMachineSelector();
+
+        if (machineCardGrid && !machineCardGrid.dataset.listenerAttached) {
+            machineCardGrid.addEventListener('click', async (event) => {
+                const card = event.target.closest('.machine-card');
+                if (!card) return;
+                const machine = card.dataset.machine;
+                if (!machine) return;
+                await onMachineSelected(machine);
+            });
+            machineCardGrid.dataset.listenerAttached = 'true';
         }
-        
-        // Configurar botões de ação
+
         setupActionButtons();
-        
-        // Atualizar turno atual
         updateCurrentShift();
-        
-        // Atualizar turno atual a cada minuto
         setInterval(updateCurrentShift, 60000);
     }
-    
-    async function populateMachineSelector() {
-        if (!machineSelector) return;
-        
-        try {
-            const today = getProductionDateString();
-            const planningSnapshot = await db.collection('planning').where('date', '==', today).get();
-            const machines = new Set();
-            
-            planningSnapshot.forEach(doc => {
-                machines.add(doc.data().machine);
-            });
-            
-            const sortedMachines = [...machines].sort();
-            let options = '<option value="">Selecione uma máquina...</option>';
-            
-            sortedMachines.forEach(machine => {
-                options += `<option value="${machine}">${machine}</option>`;
-            });
-            
-            machineSelector.innerHTML = options;
-            
-        } catch (error) {
-            console.error("Erro ao carregar máquinas: ", error);
-            machineSelector.innerHTML = '<option value="">Erro ao carregar máquinas</option>';
-        }
-    }
-    
-    async function handleMachineSelection() {
-        const selectedMachine = machineSelector.value;
-        
-        if (!selectedMachine) {
-            productionControlPanel.classList.add('hidden');
-            selectedMachineData = null;
-            return;
-        }
-        
-        try {
-            // Carregar dados da máquina selecionada
-            const today = getProductionDateString();
-            const planningSnapshot = await db.collection('planning')
-                .where('date', '==', today)
-                .where('machine', '==', selectedMachine)
-                .get();
-            
-            if (!planningSnapshot.empty) {
-                const planDoc = planningSnapshot.docs[0];
-                selectedMachineData = { id: planDoc.id, ...planDoc.data() };
-                
-                // Mostrar painel e atualizar informações
-                productionControlPanel.classList.remove('hidden');
-                updateMachineInfo();
-                loadHourlyProductionChart();
-                loadTodayStats();
-                
-            } else {
-                alert('Nenhum planejamento encontrado para esta máquina hoje.');
-                machineSelector.value = '';
-            }
-            
-        } catch (error) {
-            console.error("Erro ao carregar dados da máquina: ", error);
-            alert('Erro ao carregar dados da máquina.');
-        }
-    }
-    
+
     function updateCurrentShift() {
         const now = new Date();
         const hour = now.getHours();
@@ -4468,77 +4886,19 @@ document.addEventListener('DOMContentLoaded', function() {
     function renderHourlyChart(data) {
         if (hourlyChartInstance) {
             hourlyChartInstance.destroy();
+            hourlyChartInstance = null;
         }
-        
-        const ctx = hourlyProductionChart.getContext('2d');
-        const hours = Object.keys(data);
-        const plannedData = hours.map(hour => data[hour].planned);
-        const actualData = hours.map(hour => data[hour].actual);
-        
-        // Calcular produção acumulada
-        let plannedCumulative = 0;
-        let actualCumulative = 0;
-        const plannedCumulativeData = plannedData.map(val => {
-            plannedCumulative += val;
-            return plannedCumulative;
-        });
-        const actualCumulativeData = actualData.map(val => {
-            actualCumulative += val;
-            return actualCumulative;
-        });
-        
-        hourlyChartInstance = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: hours,
-                datasets: [
-                    {
-                        label: 'Meta Acumulada',
-                        data: plannedCumulativeData,
-                        borderColor: '#ef4444',
-                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                        borderDash: [5, 5],
-                        fill: false,
-                        tension: 0.3
-                    },
-                    {
-                        label: 'Produção Acumulada',
-                        data: actualCumulativeData,
-                        borderColor: '#22c55e',
-                        backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                        fill: true,
-                        tension: 0.3
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
 
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: {
-                            display: true,
-                            text: 'Quantidade de Peças'
-                        }
-                    },
-                    x: {
-                        title: {
-                            display: true,
-                            text: 'Hora'
-                        }
-                    }
-                },
-                plugins: {
-                    legend: {
-                        position: 'top'
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false
-                    }
-                }
-            }
+        const hours = Object.keys(data);
+        const plannedData = hours.map(hour => Number(data[hour].planned || 0));
+        const actualData = hours.map(hour => Number(data[hour].actual || 0));
+
+        hourlyChartInstance = createHourlyProductionChart({
+            canvas: hourlyProductionChart,
+            labels: hours,
+            executedPerHour: actualData,
+            plannedPerHour: plannedData,
+            highlightCurrentHour: true
         });
     }
     
@@ -4803,6 +5163,11 @@ document.addEventListener('DOMContentLoaded', function() {
     async function handleProductionSubmit(e) {
         e.preventDefault();
         
+        // Verificar permissão
+        if (!window.authSystem.checkPermissionForAction('add_production')) {
+            return;
+        }
+        
         console.log('[TRACE][handleProductionSubmit] triggered', {
             selectedMachineData,
             currentEditContext
@@ -4890,6 +5255,11 @@ document.addEventListener('DOMContentLoaded', function() {
     async function handleLossesSubmit(e) {
         e.preventDefault();
         
+        // Verificar permissão
+        if (!window.authSystem.checkPermissionForAction('add_losses')) {
+            return;
+        }
+        
         console.log('[TRACE][handleLossesSubmit] triggered', {
             selectedMachineData,
             currentEditContext
@@ -4918,28 +5288,55 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        // Se só o peso for informado, converter para peças usando peso médio do planejamento
+        // ========================================
+        // CONVERSÃO DE PESO PARA PEÇAS
+        // ========================================
         let refugoQty = quantity;
-        if (quantity <= 0 && weight > 0) {
-            // Buscar peso médio do planejamento
+        
+        // Se quantidade foi informada, usar ela
+        if (quantity > 0) {
+            refugoQty = quantity;
+        }
+        // Se só o peso foi informado, converter para peças
+        else if (weight > 0) {
             let pesoMedio = 0;
-            if (selectedMachineData && selectedMachineData.piece_weight) {
+            
+            // Tentar encontrar peso médio em múltiplas fontes
+            if (selectedMachineData) {
+                // Tentar campo piece_weight
                 pesoMedio = parseFloat(selectedMachineData.piece_weight) || 0;
+                
+                // Tentar campo weight
+                if (!pesoMedio) {
+                    pesoMedio = parseFloat(selectedMachineData.weight) || 0;
+                }
+                
+                // Tentar campo no produto
+                if (!pesoMedio && selectedMachineData.produto) {
+                    pesoMedio = parseFloat(selectedMachineData.produto.weight) || 0;
+                }
+                
+                // Tentar campo mp_weight
+                if (!pesoMedio && selectedMachineData.mp_weight) {
+                    pesoMedio = parseFloat(selectedMachineData.mp_weight) || 0;
+                }
             }
-            if (!pesoMedio && selectedMachineData && selectedMachineData.weight) {
-                pesoMedio = parseFloat(selectedMachineData.weight) || 0;
-            }
-            if (!pesoMedio && selectedMachineData && selectedMachineData.produto && selectedMachineData.produto.weight) {
-                pesoMedio = parseFloat(selectedMachineData.produto.weight) || 0;
-            }
+            
+            // Se achou peso médio, converter kg para peças (1kg = 1000g)
             if (pesoMedio > 0) {
                 refugoQty = Math.round((weight * 1000) / pesoMedio);
-                console.log(`[TRACE][handleLossesSubmit] conversão: ${weight}kg / ${pesoMedio}g = ${refugoQty} peças`);
+                console.log(`[TRACE][handleLossesSubmit] Conversão: ${weight}kg ÷ ${pesoMedio}g/peça = ${refugoQty} peças`);
+                
+                // Mostrar na tela para o usuário confirmar
+                showNotification(`Convertido: ${weight}kg = ${refugoQty} peças`, 'info');
             } else {
-                refugoQty = 0;
-                console.warn('[TRACE][handleLossesSubmit] peso médio não encontrado para conversão de peças');
+                alert('Não foi possível converter peso para peças. O peso médio da peça não está configurado. Informe a quantidade diretamente.');
+                console.warn('[TRACE][handleLossesSubmit] Peso médio não encontrado: selectedMachineData =', selectedMachineData);
+                return;
             }
         }
+        
+        console.log('[TRACE][handleLossesSubmit] Perda em peças:', { quantity, weight, refugoQty, pesoMedio: weight > 0 ? (weight * 1000 / refugoQty) : 0 });
 
         const isEditing = currentEditContext && currentEditContext.type === 'loss' && currentEditContext.id;
         const originalData = isEditing ? currentEditContext.original : null;
@@ -4986,14 +5383,26 @@ document.addEventListener('DOMContentLoaded', function() {
         const machineRef = isEditing ? (originalData?.machine || selectedMachineData?.machine) : selectedMachineData?.machine;
         const mpValue = isEditing ? (originalData?.mp || selectedMachineData?.mp || '') : (selectedMachineData?.mp || '');
 
+        // Calcular peso total se necessário (peças × peso médio)
+        let pesoTotalKg = weight;
+        if (!weight && refugoQty > 0 && selectedMachineData) {
+            let pesoMedio = parseFloat(selectedMachineData.piece_weight) 
+                || parseFloat(selectedMachineData.weight) 
+                || (selectedMachineData.produto?.weight ? parseFloat(selectedMachineData.produto.weight) : 0)
+                || 0;
+            if (pesoMedio > 0) {
+                pesoTotalKg = (refugoQty * pesoMedio) / 1000;
+            }
+        }
+
         const payloadBase = {
             planId,
             data: dataReferencia,
             turno,
             produzido: 0,
             peso_bruto: 0,
-            refugo_kg: weight,
-            refugo_qty: refugoQty,
+            refugo_kg: pesoTotalKg,
+            refugo_qty: refugoQty,  // SEMPRE em peças
             perdas: reason,
             observacoes: obs,
             machine: machineRef || null,
@@ -5040,6 +5449,11 @@ document.addEventListener('DOMContentLoaded', function() {
     
     async function handleDowntimeSubmit(e) {
         e.preventDefault();
+        
+        // Verificar permissão
+        if (!window.authSystem.checkPermissionForAction('add_downtime')) {
+            return;
+        }
         
         console.log('[TRACE][handleDowntimeSubmit] triggered', {
             selectedMachineData,
@@ -5703,38 +6117,277 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Função para popular o seletor de máquinas
+    function setActiveMachineCard(machine) {
+        if (!machineCardGrid) return;
+
+        if (activeMachineCard && activeMachineCard.isConnected) {
+            activeMachineCard.classList.remove('ring-2', 'ring-offset-2', 'ring-blue-500', 'shadow-lg');
+        }
+
+        if (!machine) {
+            activeMachineCard = null;
+            return;
+        }
+
+        const nextCard = machineCardGrid.querySelector(`[data-machine="${machine}"]`);
+        if (nextCard) {
+            nextCard.classList.add('ring-2', 'ring-offset-2', 'ring-blue-500', 'shadow-lg');
+            activeMachineCard = nextCard;
+        } else {
+            activeMachineCard = null;
+        }
+    }
+
+    function renderMachineCards(plans = [], productionEntries = []) {
+        if (!machineCardGrid) {
+            if (machineSelector) {
+                machineSelector.machineData = {};
+                machineSelector.innerHTML = '<option value="">Selecione uma máquina...</option>';
+            }
+            return;
+        }
+
+        if (machineCardEmptyState) {
+            machineCardEmptyState.textContent = 'Nenhuma máquina planejada para hoje.';
+            machineCardEmptyState.classList.add('hidden');
+            machineCardEmptyState.classList.remove('text-red-100');
+        }
+
+        machineCardData = {};
+        if (machineSelector) {
+            machineSelector.machineData = {};
+        }
+
+        const planById = {};
+        const machineOrder = [];
+
+        plans.forEach(plan => {
+            if (!plan || !plan.machine) return;
+            const enrichedPlan = { id: plan.id, ...plan };
+            machineCardData[plan.machine] = enrichedPlan;
+            planById[plan.id] = enrichedPlan;
+            machineOrder.push(plan.machine);
+        });
+
+        machineOrder.sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }));
+
+        if (machineSelector) {
+            const selectorOptions = ['<option value="">Selecione uma máquina...</option>']
+                .concat(machineOrder.map(machine => `<option value="${machine}">${machine}</option>`));
+            machineSelector.innerHTML = selectorOptions.join('');
+            machineOrder.forEach(machine => {
+                machineSelector.machineData[machine] = machineCardData[machine];
+            });
+        }
+
+        const aggregated = {};
+        machineOrder.forEach(machine => {
+            aggregated[machine] = {
+                plan: machineCardData[machine],
+                totalProduced: 0,
+                entries: [],
+                byShift: { T1: 0, T2: 0, T3: 0 }
+            };
+        });
+
+        const planIdSet = new Set(plans.map(plan => plan.id));
+        const combinedEntries = [];
+        const fallbackShiftKey = `T${getCurrentShift()}`;
+
+        productionEntries.forEach(entry => {
+            if (!entry || !planIdSet.has(entry.planId)) return;
+            const plan = planById[entry.planId];
+            if (!plan) return;
+            const machine = plan.machine;
+            const produced = Number(entry.produzido) || 0;
+            const turno = normalizeShiftValue(entry.turno);
+
+            aggregated[machine].totalProduced += produced;
+            if (turno) {
+                aggregated[machine].byShift[turno] = (aggregated[machine].byShift[turno] || 0) + produced;
+            }
+
+            const entryForOee = {
+                machine,
+                turno,
+                produzido: produced,
+                duracao_min: Number(entry.duracao_min) || 0,
+                refugo_kg: Number(entry.refugo_kg) || 0,
+                piece_weight: plan.piece_weight,
+                real_cycle_t1: plan.real_cycle_t1,
+                real_cycle_t2: plan.real_cycle_t2,
+                real_cycle_t3: plan.real_cycle_t3,
+                budgeted_cycle: plan.budgeted_cycle,
+                active_cavities_t1: plan.active_cavities_t1,
+                active_cavities_t2: plan.active_cavities_t2,
+                active_cavities_t3: plan.active_cavities_t3,
+                mold_cavities: plan.mold_cavities
+            };
+
+            aggregated[machine].entries.push(entryForOee);
+            combinedEntries.push(entryForOee);
+        });
+
+        Object.keys(machineCardCharts).forEach(machine => {
+            if (machineCardCharts[machine]) {
+                machineCardCharts[machine].destroy();
+            }
+            delete machineCardCharts[machine];
+        });
+
+        if (machineOrder.length === 0) {
+            machineCardGrid.innerHTML = '';
+            if (machineCardEmptyState) {
+                machineCardEmptyState.classList.remove('hidden');
+            }
+            setActiveMachineCard(null);
+            return;
+        }
+
+    const oeeSummary = combinedEntries.length > 0 ? calculateRealTimeOEE(combinedEntries) : null;
+    const oeeByMachine = oeeSummary?.oeeByMachine || {};
+    const currentShiftKey = oeeSummary?.currentShift || fallbackShiftKey;
+
+        const formatQty = (value) => Number(value || 0).toLocaleString('pt-BR');
+
+        machineCardGrid.innerHTML = machineOrder.map(machine => {
+            const data = aggregated[machine];
+            const plan = data.plan || {};
+            const oeeShiftData = oeeByMachine[machine]?.[currentShiftKey];
+            const oeePercent = Math.max(0, Math.min((oeeShiftData?.oee || 0) * 100, 100));
+            const oeePercentText = oeePercent ? oeePercent.toFixed(1) : '0.0';
+            const oeeColor = oeePercent >= 85 ? 'text-green-600' : oeePercent >= 70 ? 'text-amber-500' : 'text-red-500';
+            const chartId = `machine-oee-${machine.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
+            const plannedQty = Number(plan.planned_quantity) || 0;
+            const productLine = plan.product ? `<p class="mt-1 text-sm text-slate-600">${plan.product}</p>` : '<p class="mt-1 text-sm text-slate-400">Produto não definido</p>';
+            const mpLine = plan.mp ? `<p class="text-xs text-slate-400 mt-1">MP: ${plan.mp}</p>` : '';
+            const shiftProduced = data.byShift[currentShiftKey] ?? data.byShift[fallbackShiftKey] ?? 0;
+
+            return `
+                <div class="machine-card group relative bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-lg transition hover:-translate-y-1 cursor-pointer p-4" data-machine="${machine}">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Máquina</span>
+                            <p class="text-xl font-bold text-slate-900">${machine}</p>
+                            ${productLine}
+                            ${mpLine}
+                        </div>
+                        <div class="relative w-20 h-20">
+                            <canvas id="${chartId}" class="w-full h-full"></canvas>
+                            <div class="absolute inset-0 flex items-center justify-center">
+                                <span class="text-sm font-semibold ${oeeColor}">${oeePercentText}%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                            <span class="text-xs uppercase tracking-wide text-slate-500">Turno atual</span>
+                            <p class="font-semibold text-slate-700">${formatShiftLabel(currentShiftKey)}</p>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-xs uppercase tracking-wide text-slate-500">Prod. turno</span>
+                            <p class="font-semibold text-slate-700">${formatQty(shiftProduced)}</p>
+                        </div>
+                    </div>
+                    <div class="mt-4 border-t border-slate-200 pt-3 flex items-center justify-between text-sm">
+                        <div>
+                            <span class="text-xs uppercase tracking-wide text-slate-500">Planejado</span>
+                            <p class="font-semibold text-slate-700">${formatQty(plannedQty)}</p>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-xs uppercase tracking-wide text-slate-500">Produzido</span>
+                            <p class="font-semibold text-slate-700">${formatQty(data.totalProduced)}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        machineOrder.forEach(machine => {
+            const chartId = `machine-oee-${machine.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
+            const canvas = document.getElementById(chartId);
+            if (!canvas) return;
+
+            const oeeShiftData = oeeByMachine[machine]?.[currentShiftKey];
+            const oeePercent = Math.max(0, Math.min((oeeShiftData?.oee || 0) * 100, 100));
+            const accomplishedColor = oeePercent >= 85 ? '#10B981' : oeePercent >= 70 ? '#F59E0B' : '#EF4444';
+            const remainingColor = 'rgba(226, 232, 240, 0.7)';
+
+            machineCardCharts[machine] = new Chart(canvas, {
+                type: 'doughnut',
+                data: {
+                    labels: ['OEE', 'Restante'],
+                    datasets: [{
+                        data: [oeePercent, Math.max(0, 100 - oeePercent)],
+                        backgroundColor: [accomplishedColor, remainingColor],
+                        borderWidth: 0,
+                        hoverOffset: 4,
+                        cutout: '72%',
+                        borderRadius: 10
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    rotation: -90,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: (context) => `${context.label}: ${context.parsed.toFixed(1)}%`
+                            }
+                        }
+                    }
+                }
+            });
+        });
+
+        if (selectedMachineData && selectedMachineData.machine && machineCardData[selectedMachineData.machine]) {
+            setActiveMachineCard(selectedMachineData.machine);
+        } else {
+            selectedMachineData = null;
+            setActiveMachineCard(null);
+            if (productionControlPanel) {
+                productionControlPanel.classList.add('hidden');
+            }
+            updateRecentEntriesEmptyMessage('Selecione uma máquina para visualizar os lançamentos.');
+            setRecentEntriesState({ loading: false, empty: true });
+        }
+    }
+
+    // Função para popular o seletor de máquinas (e cards)
     async function populateMachineSelector() {
-        if (!machineSelector) return;
-        
         try {
             const today = getProductionDateString();
             const planSnapshot = await db.collection('planning').where('date', '==', today).get();
-            
-            const machines = new Set();
-            const machineData = {};
-            
-            planSnapshot.forEach(doc => {
-                const data = doc.data();
-                machines.add(data.machine);
-                machineData[data.machine] = { id: doc.id, ...data };
-            });
-            
-            const sortedMachines = [...machines].sort();
-            
-            let options = '<option value="">Selecione uma máquina...</option>';
-            sortedMachines.forEach(machine => {
-                options += `<option value="${machine}">${machine}</option>`;
-            });
-            
-            machineSelector.innerHTML = options;
-            
-            // Armazenar dados das máquinas
-            machineSelector.machineData = machineData;
-            
+            const plans = planSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            let productionEntries = [];
+            if (plans.length > 0) {
+                const productionSnapshot = await db.collection('production_entries').where('data', '==', today).get();
+                const planIdSet = new Set(plans.map(plan => plan.id));
+                productionEntries = productionSnapshot.docs
+                    .map(doc => ({ id: doc.id, ...doc.data() }))
+                    .filter(entry => planIdSet.has(entry.planId));
+            }
+
+            renderMachineCards(plans, productionEntries);
         } catch (error) {
-            console.error("Erro ao carregar máquinas: ", error);
-            machineSelector.innerHTML = '<option value="">Erro ao carregar máquinas</option>';
+            console.error('Erro ao carregar máquinas: ', error);
+            if (machineCardGrid) {
+                machineCardGrid.innerHTML = '';
+            }
+            if (machineCardEmptyState) {
+                machineCardEmptyState.textContent = 'Erro ao carregar máquinas. Tente novamente.';
+                machineCardEmptyState.classList.remove('hidden');
+                machineCardEmptyState.classList.add('text-red-100');
+            }
+            if (machineSelector) {
+                machineSelector.innerHTML = '<option value="">Erro ao carregar máquinas</option>';
+                machineSelector.machineData = {};
+            }
         }
     }
     
@@ -5743,12 +6396,14 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!currentShiftDisplay) return;
         
         const currentShift = getCurrentShift();
-        currentShiftDisplay.textContent = currentShift;
+        currentShiftDisplay.textContent = `T${currentShift}`;
     }
     
     // Função para quando uma máquina é selecionada
     async function onMachineSelected(machine) {
-        if (!machine || !machineSelector.machineData) {
+        const machineData = machineCardData[machine] || machineSelector?.machineData?.[machine];
+
+        if (!machine || !machineData) {
             productionControlPanel.classList.add('hidden');
             selectedMachineData = null;
             if (recentEntriesList) {
@@ -5758,9 +6413,14 @@ document.addEventListener('DOMContentLoaded', function() {
             setRecentEntriesState({ loading: false, empty: true });
             if (productMp) productMp.textContent = 'Matéria-prima não definida';
             return;
+            setActiveMachineCard(null);
         }
         
-        selectedMachineData = machineSelector.machineData[machine];
+        selectedMachineData = machineData;
+        if (machineSelector) {
+            machineSelector.value = machine;
+        }
+        setActiveMachineCard(machine);
         
         // Atualizar informações da máquina
         if (machineIcon) machineIcon.textContent = machine;
@@ -5853,61 +6513,18 @@ document.addEventListener('DOMContentLoaded', function() {
             // Renderizar gráfico
             if (hourlyChartInstance) {
                 hourlyChartInstance.destroy();
+                hourlyChartInstance = null;
             }
-            
-            const ctx = hourlyProductionChart.getContext('2d');
-            hourlyChartInstance = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: sortedHours,
-                    datasets: [
-                        {
-                            label: 'Meta Acumulada',
-                            data: targetData,
-                            borderColor: '#ef4444',
-                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                            borderDash: [5, 5],
-                            fill: false,
-                            tension: 0.1
-                        },
-                        {
-                            label: 'Produção Acumulada',
-                            data: cumulativeData,
-                            borderColor: '#22c55e',
-                            backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                            fill: true,
-                            tension: 0.3
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-    
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            title: {
-                                display: true,
-                                text: 'Quantidade (peças)'
-                            }
-                        },
-                        x: {
-                            title: {
-                                display: true,
-                                text: 'Hora'
-                            }
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            position: 'top'
-                        },
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false
-                        }
-                    }
-                }
+
+            const hourlyActualSeries = sortedHours.map(hour => hourlyData[hour] || 0);
+            const hourlyPlannedSeries = sortedHours.map(() => hourlyTarget);
+
+            hourlyChartInstance = createHourlyProductionChart({
+                canvas: hourlyProductionChart,
+                labels: sortedHours,
+                executedPerHour: hourlyActualSeries,
+                plannedPerHour: hourlyPlannedSeries,
+                highlightCurrentHour: true
             });
             
         } catch (error) {
@@ -6529,19 +7146,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // --- ABA DE ANÁLISE: DASHBOARD ---
-    
-    function toggleDashboardChart(view) {
-        if (!chartToggleProdBtn || !chartToggleOeeBtn || !chartToggleTrendBtn || 
-            !productionChartContainer || !oeeChartContainer || !oeeTrendContainer) return;
-        
-        chartToggleProdBtn.classList.toggle('active', view === 'prod');
-        chartToggleOeeBtn.classList.toggle('active', view === 'oee');
-        chartToggleTrendBtn.classList.toggle('active', view === 'trend');
-        
-        productionChartContainer.classList.toggle('hidden', view !== 'prod');
-        oeeChartContainer.classList.toggle('hidden', view !== 'oee');
-        oeeTrendContainer.classList.toggle('hidden', view !== 'trend');
-    }
     
     async function loadDashboardData() {
         const startDate = startDateSelector ? startDateSelector.value : getProductionDateString();
@@ -7202,97 +7806,4 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Funções de teste Firebase
-    async function testFirebaseConnection() {
-        try {
-            console.log('🔥 Iniciando teste Firebase...');
-            
-            // Verificar se Firebase está carregado
-            if (typeof firebase === 'undefined') {
-                console.error('❌ Firebase não está carregado');
-                showNotification('Firebase não está carregado', 'error');
-                return false;
-            }
-            
-            console.log('✅ Firebase carregado');
-            
-            // Testar configuração
-            const app = firebase.app();
-            console.log('✅ App Firebase:', app.name);
-            
-            // Testar Firestore
-            console.log('✅ Firestore conectado');
-            
-            // Testar escrita simples
-            const testData = {
-                teste: true,
-                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                data: new Date().toISOString()
-            };
-            
-            console.log('📝 Tentando escrever dados de teste...');
-            showNotification('Testando escrita no Firebase...', 'info');
-            
-            const docRef = await db.collection('test').add(testData);
-            console.log('✅ Documento de teste criado:', docRef.id);
-            showNotification('Teste de escrita bem-sucedido!', 'success');
-            
-            // Testar leitura
-            console.log('📖 Tentando ler dados de teste...');
-            const snapshot = await db.collection('test').limit(1).get();
-            console.log('✅ Dados lidos:', snapshot.size, 'documentos');
-            
-            // Limpar teste
-            await docRef.delete();
-            console.log('🗑️ Documento de teste removido');
-            
-            // Testar coleções específicas
-            await testCollectionWrite();
-            
-            showNotification('Todos os testes Firebase concluídos com sucesso!', 'success');
-            return true;
-            
-        } catch (error) {
-            console.error('❌ Erro no teste Firebase:', error);
-            console.error('Código:', error.code);
-            console.error('Mensagem:', error.message);
-            showNotification(`Erro Firebase: ${error.message}`, 'error');
-            return false;
-        }
-    }
-
-    // Função para testar escrita em coleções específicas
-    async function testCollectionWrite() {
-        const collections = ['production', 'losses', 'downtime'];
-        
-        for (const collectionName of collections) {
-            try {
-                console.log(`📝 Testando escrita em ${collectionName}...`);
-                
-                const testDoc = {
-                    teste: true,
-                    collection: collectionName,
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                };
-                
-                const docRef = await db.collection(collectionName).add(testDoc);
-                console.log(`✅ ${collectionName}: documento criado com ID ${docRef.id}`);
-                
-                // Limpar
-                await docRef.delete();
-                console.log(`🗑️ ${collectionName}: documento de teste removido`);
-                
-            } catch (error) {
-                console.error(`❌ Erro em ${collectionName}:`, error.code, error.message);
-                showNotification(`Erro em ${collectionName}: ${error.message}`, 'error');
-            }
-        }
-    }
-    
-    // Adicionar evento do botão de teste Firebase
-    const firebaseTestBtn = document.getElementById('firebase-test-btn');
-    if (firebaseTestBtn) {
-        firebaseTestBtn.addEventListener('click', testFirebaseConnection);
-        console.log('✅ Botão de teste Firebase configurado');
-    }
 });
