@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SYNCHRO-GEMINI - Login</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <style>
+        .gradient-bg {
+            background-image: linear-gradient(135deg, rgba(102, 126, 234, 0.55) 0%, rgba(118, 75, 162, 0.55) 100%), url('https://i.postimg.cc/zfgWtdm8/Preservacao-do-planeta-3-1-1024x576-1.png');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-blend-mode: multiply;
+        }
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+    </style>
+</head>
+<body class="gradient-bg min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-md">
+        <!-- Card de Login -->
+        <div class="glass-effect rounded-2xl shadow-2xl p-8">
+            <!-- Header com Logos -->
+            <div class="text-center mb-8">
+                <div class="flex justify-center items-center gap-4 mb-6">
+                    <!-- Logo Hokkaido -->
+                    <img src="https://i.postimg.cc/5jdHwhF9/hokkaido-logo-110.png" alt="Logo Hokkaido Plastics" class="h-16 md:h-20 w-auto object-contain" loading="lazy">
+                    <!-- Separador -->
+                    <div class="w-8 h-0.5 bg-gray-300"></div>
+                    <!-- Logo Synchro -->
+                    <img src="https://i.postimg.cc/h47TKP4d/logosynchro.png" alt="Logo Synchro" class="h-16 md:h-20 w-auto object-contain" loading="lazy">
+                </div>
+                <h1 class="text-2xl font-bold text-gray-800 mb-2">SYNCHRO-GEMINI</h1>
+                <p class="text-gray-600 text-sm">Sistema de Controle de Produção</p>
+            </div>
+
+            <!-- Formulário de Login -->
+            <form id="login-form" class="space-y-6">
+                <!-- Campo Usuário -->
+                <div>
+                    <label for="username" class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="w-4 h-4 inline mr-2" data-lucide="user"></i>
+                        Usuário
+                    </label>
+                    <input 
+                        type="text" 
+                        id="username" 
+                        name="username" 
+                        required
+                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                        placeholder="Digite seu usuário"
+                        autocomplete="username">
+                </div>
+
+                <!-- Campo Senha -->
+                <div>
+                    <label for="password" class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="w-4 h-4 inline mr-2" data-lucide="lock"></i>
+                        Senha
+                    </label>
+                    <div class="relative">
+                        <input 
+                            type="password" 
+                            id="password" 
+                            name="password" 
+                            required
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 pr-12"
+                            placeholder="Digite sua senha"
+                            autocomplete="current-password">
+                        <button 
+                            type="button" 
+                            id="toggle-password"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 transition-colors">
+                            <i class="w-5 h-5" data-lucide="eye"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Lembrar Login -->
+                <div class="flex items-center">
+                    <input 
+                        type="checkbox" 
+                        id="remember-me" 
+                        name="remember"
+                        class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500">
+                    <label for="remember-me" class="ml-2 text-sm text-gray-700">
+                        Lembrar meu login
+                    </label>
+                </div>
+
+                <!-- Botão Login -->
+                <button 
+                    type="submit" 
+                    id="login-btn"
+                    class="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold py-3 px-4 rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all duration-200 transform hover:scale-105 flex items-center justify-center gap-2">
+                    <i class="w-5 h-5" data-lucide="log-in"></i>
+                    <span>Entrar no Sistema</span>
+                </button>
+
+                <!-- Loading State -->
+                <div id="login-loading" class="hidden w-full bg-gray-400 text-white font-semibold py-3 px-4 rounded-lg flex items-center justify-center gap-2">
+                    <i class="w-5 h-5 animate-spin" data-lucide="loader-2"></i>
+                    <span>Verificando credenciais...</span>
+                </div>
+            </form>
+
+            <!-- Mensagem de Erro -->
+            <div id="login-error" class="hidden mt-4 p-3 bg-red-100 border border-red-300 text-red-700 rounded-lg text-sm">
+                <i class="w-4 h-4 inline mr-2" data-lucide="alert-circle"></i>
+                <span id="error-message">Usuário ou senha incorretos</span>
+            </div>
+
+            <!-- Footer -->
+            <div class="mt-8 text-center text-xs text-gray-500">
+                <p>© 2025 Hokkaido & Synchro</p>
+                <p class="mt-1">Sistema de Monitoramento Industrial</p>
+            </div>
+        </div>
+
+        <!-- Informações de Usuários Demo (apenas desenvolvimento) -->
+        <div class="mt-6 bg-white/80 rounded-lg p-4 text-xs text-gray-600">
+            <h3 class="font-semibold mb-2">👥 Usuários Demo:</h3>
+            <div class="space-y-1">
+                <p><strong>Gestor:</strong> admin / admin123</p>
+                <p><strong>Operador:</strong> operador / op123</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Inicializar ícones Lucide
+        lucide.createIcons();
+
+        // Alternar visibilidade da senha
+        document.getElementById('toggle-password').addEventListener('click', function() {
+            const passwordInput = document.getElementById('password');
+            const eyeIcon = this.querySelector('[data-lucide]');
+            
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                eyeIcon.setAttribute('data-lucide', 'eye-off');
+            } else {
+                passwordInput.type = 'password';
+                eyeIcon.setAttribute('data-lucide', 'eye');
+            }
+            lucide.createIcons();
+        });
+
+        // Base de usuários (em produção, usar Firebase Auth ou API)
+        const users = {
+            'admin': {
+                password: 'admin123',
+                role: 'gestor',
+                name: 'Administrador',
+                permissions: ['planejamento', 'lancamento', 'analise']
+            },
+            'gestor': {
+                password: 'gestor123',
+                role: 'gestor', 
+                name: 'Gestor de Produção',
+                permissions: ['planejamento', 'lancamento', 'analise']
+            },
+            'operador': {
+                password: 'op123',
+                role: 'operador',
+                name: 'Operador de Produção',
+                permissions: ['lancamento']
+            },
+            'supervisor': {
+                password: 'sup123',
+                role: 'supervisor',
+                name: 'Supervisor',
+                permissions: ['lancamento', 'analise']
+            }
+        };
+
+        // Função de login
+        document.getElementById('login-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const rememberMe = document.getElementById('remember-me').checked;
+            
+            // Mostrar loading
+            showLoading(true);
+            hideError();
+            
+            // Simular delay de verificação
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Verificar credenciais
+            const user = users[username.toLowerCase()];
+            
+            if (user && user.password === password) {
+                // Login bem-sucedido
+                const userSession = {
+                    username: username,
+                    name: user.name,
+                    role: user.role,
+                    permissions: user.permissions,
+                    loginTime: new Date().toISOString()
+                };
+                
+                // Salvar sessão
+                if (rememberMe) {
+                    localStorage.setItem('synchro_user', JSON.stringify(userSession));
+                } else {
+                    sessionStorage.setItem('synchro_user', JSON.stringify(userSession));
+                }
+                
+                // Redirecionar para o sistema principal
+                window.location.href = 'index.html';
+                
+            } else {
+                // Login falhou
+                showError('Usuário ou senha incorretos');
+                showLoading(false);
+            }
+        });
+
+        function showLoading(show) {
+            const loginBtn = document.getElementById('login-btn');
+            const loadingDiv = document.getElementById('login-loading');
+            
+            if (show) {
+                loginBtn.classList.add('hidden');
+                loadingDiv.classList.remove('hidden');
+            } else {
+                loginBtn.classList.remove('hidden');
+                loadingDiv.classList.add('hidden');
+            }
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('login-error');
+            const errorMessage = document.getElementById('error-message');
+            
+            errorMessage.textContent = message;
+            errorDiv.classList.remove('hidden');
+        }
+
+        function hideError() {
+            const errorDiv = document.getElementById('login-error');
+            errorDiv.classList.add('hidden');
+        }
+
+        // Verificar se já está logado
+        window.addEventListener('load', function() {
+            const savedUser = localStorage.getItem('synchro_user') || sessionStorage.getItem('synchro_user');
+            if (savedUser) {
+                // Usuário já logado, redirecionar
+                window.location.href = 'index.html';
+            }
+        });
+
+        // Auto-focus no campo usuário
+        document.getElementById('username').focus();
+    </script>
+</body>
+</html>
