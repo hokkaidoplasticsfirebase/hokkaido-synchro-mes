@@ -4450,6 +4450,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         let planningItems = [];
         let productionEntries = [];
+        let downtimeEntries = [];
 
         const render = () => {
             const combinedData = planningItems.map(plan => {
@@ -4474,7 +4475,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             renderPlanningTable(combinedData);
             renderLeaderPanel(planningItems);
-            renderMachineCards(planningItems, productionEntries);
+            renderMachineCards(planningItems, productionEntries, downtimeEntries);
             showLoadingState('leader-panel', false, planningItems.length === 0);
         };
 
@@ -4517,8 +4518,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 productionEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 render();
             }, error => console.error("Erro ao carregar lançamentos de produção:", error));
+        // Listener de paradas do dia selecionado e próximo dia (para cobrir T3 após 00:00)
+        const base = new Date(`${date}T12:00:00`);
+        const next = new Date(base); next.setDate(next.getDate() + 1);
+        const nextStr = new Date(next.getTime() - next.getTimezoneOffset()*60000).toISOString().split('T')[0];
+        const downtimeListener = db.collection('downtime_entries')
+            .where('date', 'in', [date, nextStr])
+            .onSnapshot(snapshot => {
+                downtimeEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                render();
+            }, error => console.error('Erro ao carregar paradas:', error));
 
-        activeListenerUnsubscribe = { planningListener, entriesListener };
+        activeListenerUnsubscribe = { planningListener, entriesListener, downtimeListener };
     }
 
     function renderPlanningTable(items) {
@@ -6583,7 +6594,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function renderMachineCards(plans = [], productionEntries = []) {
+    function renderMachineCards(plans = [], productionEntries = [], downtimeEntries = []) {
         if (!machineCardGrid) {
             if (machineSelector) {
                 machineSelector.machineData = {};
@@ -6630,6 +6641,7 @@ document.addEventListener('DOMContentLoaded', function() {
             aggregated[machine] = {
                 plan: machineCardData[machine],
                 totalProduced: 0,
+                totalLossesKg: 0,
                 entries: [],
                 byShift: { T1: 0, T2: 0, T3: 0 }
             };
@@ -6648,6 +6660,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const turno = normalizeShiftValue(entry.turno);
 
             aggregated[machine].totalProduced += produced;
+            aggregated[machine].totalLossesKg += Number(entry.refugo_kg) || 0;
             if (turno) {
                 aggregated[machine].byShift[turno] = (aggregated[machine].byShift[turno] || 0) + produced;
             }
@@ -6704,8 +6717,9 @@ document.addEventListener('DOMContentLoaded', function() {
             const normalizedProgress = Math.max(0, Math.min(progressPercentRaw, 100));
             const progressPalette = resolveProgressPalette(progressPercentRaw);
             const progressTextClass = progressPalette.textClass || 'text-slate-600';
-            const progressLabel = progressPercentRaw >= 100 ? Math.round(progressPercentRaw) : Number(progressPercentRaw.toFixed(1));
-            const progressDisplay = `${Number.isFinite(progressLabel) ? progressLabel : 0}%`;
+            // Exibir no texto um valor limitado a 100% para evitar confundir com percentuais muito maiores
+            const displayPercent = Math.max(0, Math.min(progressPercentRaw, 100));
+            const progressDisplay = `${displayPercent.toFixed(displayPercent >= 100 ? 0 : 1)}%`;
 
             machineProgressInfo[machine] = {
                 normalizedProgress,
@@ -6717,7 +6731,44 @@ document.addEventListener('DOMContentLoaded', function() {
             const oeePercent = Math.max(0, Math.min((oeeShiftData?.oee || 0) * 100, 100));
             const oeePercentText = oeePercent ? oeePercent.toFixed(1) : '0.0';
             const oeeColorClass = oeePercent >= 85 ? 'text-emerald-600' : oeePercent >= 70 ? 'text-amber-500' : 'text-red-500';
-            const chartId = `machine-oee-${machine.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
+            // Cálculos de KPIs (Ritmo, Tempo rodando/paradas, Qualidade/Perdas)
+            const nowRef = new Date();
+            const shiftStart = getShiftStartDateTime(nowRef);
+            let currentRate = 0, necessaryRate = 0, runtimeHours = 0, downtimeHours = 0;
+            if (shiftStart instanceof Date && !Number.isNaN(shiftStart.getTime())) {
+                const elapsedSec = Math.max(0, Math.floor((nowRef.getTime() - shiftStart.getTime()) / 1000));
+                if (elapsedSec > 0) {
+                    const dts = (downtimeEntries || []).filter(dt => dt && dt.machine === machine);
+                    const runtimeSec = calculateProductionRuntimeSeconds({ shiftStart, now: nowRef, downtimes: dts });
+                    runtimeHours = Math.max(0, runtimeSec / 3600);
+                    downtimeHours = Math.max(0, (elapsedSec / 3600) - runtimeHours);
+                    currentRate = runtimeHours > 0 ? (data.totalProduced / runtimeHours) : 0;
+                    const workDay = getProductionDateString(nowRef);
+                    let prodDayEnd = combineDateAndTime(workDay, '07:00');
+                    if (nowRef.getHours() >= PRODUCTION_DAY_START_HOUR) {
+                        prodDayEnd.setDate(prodDayEnd.getDate() + 1);
+                    }
+                    const remainingSec = Math.max(0, Math.floor((prodDayEnd.getTime() - nowRef.getTime()) / 1000));
+                    const remainingHours = remainingSec / 3600;
+                    const remainingQty = Math.max(0, plannedQty - data.totalProduced);
+                    necessaryRate = remainingHours > 0 ? (remainingQty / remainingHours) : 0;
+                }
+            }
+            let rateColorClass = 'text-slate-400';
+            if (necessaryRate > 0) {
+                const ratio = currentRate / necessaryRate;
+                rateColorClass = ratio >= 0.95 ? 'text-emerald-600' : (ratio >= 0.75 ? 'text-amber-600' : 'text-red-600');
+            }
+            const lossesKg = Number(data.totalLossesKg) || 0;
+            const pieceWeight = Number(plan.piece_weight) || 0;
+            const scrapPcs = pieceWeight > 0 ? Math.round((lossesKg * 1000) / pieceWeight) : 0;
+            let qualityPct = 100;
+            if (data.totalProduced > 0) {
+                qualityPct = Math.max(0, Math.min(100, ((data.totalProduced - scrapPcs) / data.totalProduced) * 100));
+            } else if (lossesKg > 0) {
+                qualityPct = 0;
+            }
+            const qualityColorClass = qualityPct >= 98 ? 'text-emerald-600' : (qualityPct >= 95 ? 'text-amber-600' : 'text-red-600');
             const productLine = plan.product ? `<p class="mt-1 text-sm text-slate-600">${plan.product}</p>` : '<p class="mt-1 text-sm text-slate-400">Produto não definido</p>';
             const mpLine = plan.mp ? `<p class="text-xs text-slate-400 mt-1">MP: ${plan.mp}</p>` : '';
             const shiftProduced = data.byShift[currentShiftKey] ?? data.byShift[fallbackShiftKey] ?? 0;
@@ -6731,11 +6782,16 @@ document.addEventListener('DOMContentLoaded', function() {
                             ${productLine}
                             ${mpLine}
                         </div>
-                        <div class="relative w-20 h-20">
-                            <canvas id="${chartId}" class="w-full h-full"></canvas>
-                            <div class="absolute inset-0 flex flex-col items-center justify-center leading-tight text-center">
-                                <span class="text-sm font-semibold ${progressTextClass}">${progressDisplay}</span>
-                                <span class="text-[10px] uppercase tracking-wide text-slate-400">Meta</span>
+                        <div class="text-right">
+                            <div class="text-xs uppercase tracking-wide text-slate-500">Ritmo</div>
+                            <div class="font-semibold leading-tight">
+                                <span class="text-slate-700">${currentRate.toFixed(1)} pcs/h</span>
+                                <span class="text-slate-400"> / </span>
+                                <span class="${rateColorClass}">${necessaryRate.toFixed(1)} nec.</span>
+                            </div>
+                            <div class="mt-2 flex gap-2 justify-end text-[11px]">
+                                <span class="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700" title="Tempo efetivo rodando no turno">${runtimeHours.toFixed(1)}h rodando</span>
+                                <span class="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700" title="Tempo em paradas no turno">${downtimeHours.toFixed(1)}h paradas</span>
                             </div>
                         </div>
                     </div>
@@ -6743,7 +6799,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <span>OEE turno:</span>
                         <span class="font-semibold ${oeeColorClass}">${oeePercentText}%</span>
                     </div>
-                    <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
+                    <div class="mt-3 grid grid-cols-2 gap-3 text-sm">
                         <div>
                             <span class="text-xs uppercase tracking-wide text-slate-500">Turno atual</span>
                             <p class="font-semibold text-slate-700">${formatShiftLabel(currentShiftKey)}</p>
@@ -6751,6 +6807,16 @@ document.addEventListener('DOMContentLoaded', function() {
                         <div class="text-right">
                             <span class="text-xs uppercase tracking-wide text-slate-500">Prod. turno</span>
                             <p class="font-semibold text-slate-700">${formatQty(shiftProduced)}</p>
+                        </div>
+                    </div>
+                    <div class="mt-3 grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                            <span class="text-xs uppercase tracking-wide text-slate-500">Qualidade</span>
+                            <p class="font-semibold ${qualityColorClass}">${qualityPct.toFixed(1)}%</p>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-xs uppercase tracking-wide text-slate-500">Perdas</span>
+                            <p class="font-semibold text-slate-700">${(Number(lossesKg) || 0).toFixed(2)} kg</p>
                         </div>
                     </div>
                     <div class="mt-4 border-t border-slate-200 pt-3 flex items-center justify-between text-sm">
@@ -6767,51 +6833,7 @@ document.addEventListener('DOMContentLoaded', function() {
             `;
         }).join('');
 
-        machineOrder.forEach(machine => {
-            const chartId = `machine-oee-${machine.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
-            const canvas = document.getElementById(chartId);
-            if (!canvas) return;
-
-            const progressInfo = machineProgressInfo[machine] || { normalizedProgress: 0, palette: resolveProgressPalette(0) };
-            const ctx = canvas.getContext('2d');
-            const bounds = canvas.getBoundingClientRect();
-            const gradient = ctx.createLinearGradient(0, 0, bounds.width || canvas.width || 120, bounds.height || canvas.height || 120);
-            gradient.addColorStop(0, progressInfo.palette.start);
-            gradient.addColorStop(1, progressInfo.palette.end);
-
-            const progressValue = Math.max(0, Math.min(progressInfo.normalizedProgress, 100));
-            const remainingValue = Math.max(0, 100 - progressValue);
-
-            machineCardCharts[machine] = new Chart(canvas, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Executado', 'Restante'],
-                    datasets: [{
-                        data: [progressValue, remainingValue],
-                        backgroundColor: [gradient, 'rgba(226, 232, 240, 0.65)'],
-                        borderWidth: 0,
-                        hoverOffset: 4,
-                        cutout: '72%',
-                        borderRadius: 10
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    rotation: -90,
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: (context) => `${context.label}: ${context.parsed.toFixed(1)}%`
-                            }
-                        }
-                    }
-                }
-            });
-        });
+        // Gráfico de rosca removido; exibimos KPIs no lugar
 
         if (selectedMachineData && selectedMachineData.machine && machineCardData[selectedMachineData.machine]) {
             setActiveMachineCard(selectedMachineData.machine);
@@ -6834,15 +6856,27 @@ document.addEventListener('DOMContentLoaded', function() {
             const plans = planSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
             let productionEntries = [];
+            let downtimeEntries = [];
             if (plans.length > 0) {
                 const productionSnapshot = await db.collection('production_entries').where('data', '==', today).get();
                 const planIdSet = new Set(plans.map(plan => plan.id));
                 productionEntries = productionSnapshot.docs
                     .map(doc => ({ id: doc.id, ...doc.data() }))
                     .filter(entry => planIdSet.has(entry.planId));
+
+                // Paradas do dia (inclui dia anterior para cobrir T3 após 00:00)
+                const base = new Date(`${today}T12:00:00`);
+                const prev = new Date(base); prev.setDate(prev.getDate() - 1);
+                const prevStr = new Date(prev.getTime() - prev.getTimezoneOffset()*60000).toISOString().split('T')[0];
+                const dtSnapshot = await db.collection('downtime_entries')
+                    .where('date', 'in', [prevStr, today])
+                    .get();
+                const machineSet = new Set(plans.map(p => p.machine));
+                downtimeEntries = dtSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                    .filter(dt => machineSet.has(dt.machine));
             }
 
-            renderMachineCards(plans, productionEntries);
+            renderMachineCards(plans, productionEntries, downtimeEntries);
         } catch (error) {
             console.error('Erro ao carregar máquinas: ', error);
             if (machineCardGrid) {
@@ -6977,8 +7011,8 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             
             // Meta acumulada (distribuída uniformemente)
-            const totalTarget = selectedMachineData.planned_quantity || 0;
-            const hourlyTarget = totalTarget / 24;
+            const totalTarget = Number(selectedMachineData.planned_quantity) || 0;
+            const hourlyTarget = totalTarget / HOURS_IN_PRODUCTION_DAY;
             let cumulativeTarget = 0;
             const targetData = sortedHours.map(() => {
                 cumulativeTarget += hourlyTarget;
@@ -6993,6 +7027,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const hourlyActualSeries = sortedHours.map(hour => hourlyData[hour] || 0);
             const hourlyPlannedSeries = sortedHours.map(() => hourlyTarget);
+
+            const totalExecuted = hourlyActualSeries.reduce((sum, value) => sum + value, 0);
+            const hoursElapsed = getHoursElapsedInProductionDay(new Date());
+            const expectedByNow = Math.min(totalTarget, hoursElapsed * hourlyTarget);
+
+            updateTimelineProgress(totalExecuted, totalTarget, expectedByNow);
 
             hourlyChartInstance = createHourlyProductionChart({
                 canvas: hourlyProductionChart,
