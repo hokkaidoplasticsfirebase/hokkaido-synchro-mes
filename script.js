@@ -167,6 +167,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // Variáveis do novo painel de lançamento
     let selectedMachineData = null;
     let hourlyChartInstance = null;
+    let analysisHourlyChartInstance = null;
+    let machineProductionTimelineInstance = null;
     let productionTimer = null;
     let productionTimerBaseSeconds = 0;
     let productionTimerResumeTimestamp = null;
@@ -226,6 +228,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const machineCardEmptyState = document.getElementById('machine-card-empty');
     const productionControlPanel = document.getElementById('production-control-panel');
     const hourlyProductionChart = document.getElementById('hourly-production-chart');
+    const analysisHourlyProductionChart = document.getElementById('analysis-hourly-production-chart');
+    const analysisMachineProductionTimelineChart = document.getElementById('analysis-machine-production-timeline');
     const currentShiftDisplay = document.getElementById('current-shift-display');
     const machineIcon = document.getElementById('machine-icon');
     const machineName = document.getElementById('machine-name');
@@ -349,6 +353,16 @@ document.addEventListener('DOMContentLoaded', function() {
         warning: { start: '#f59e0b', end: '#fbbf24', textClass: 'text-amber-500' },
         success: { start: '#10b981', end: '#34d399', textClass: 'text-emerald-600' }
     };
+    const ANALYSIS_LINE_COLORS = [
+        { border: '#2563EB', fill: 'rgba(37, 99, 235, 0.15)' },
+        { border: '#10B981', fill: 'rgba(16, 185, 129, 0.15)' },
+        { border: '#F59E0B', fill: 'rgba(245, 158, 11, 0.15)' },
+        { border: '#9333EA', fill: 'rgba(147, 51, 234, 0.15)' },
+        { border: '#EC4899', fill: 'rgba(236, 72, 153, 0.15)' },
+        { border: '#0EA5E9', fill: 'rgba(14, 165, 233, 0.15)' },
+        { border: '#22C55E', fill: 'rgba(34, 197, 94, 0.15)' },
+        { border: '#F97316', fill: 'rgba(249, 115, 22, 0.15)' }
+    ];
 
     function hexToRgb(hex) {
         if (!hex) return { r: 0, g: 0, b: 0 };
@@ -417,6 +431,20 @@ document.addEventListener('DOMContentLoaded', function() {
     function formatHourLabel(hourValue) {
         const normalized = ((hourValue % 24) + 24) % 24;
         return `${String(normalized).padStart(2, '0')}:00`;
+    }
+
+    function formatShortDateLabel(dateStr) {
+        if (!dateStr) return '--';
+        const safeValue = String(dateStr).slice(0, 10);
+        const parsed = new Date(`${safeValue}T00:00:00`);
+        if (!Number.isNaN(parsed.getTime())) {
+            return parsed.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        }
+        const parts = safeValue.split('-');
+        if (parts.length === 3) {
+            return `${parts[2]}/${parts[1]}`;
+        }
+        return safeValue;
     }
 
     function getProductionHoursOrder() {
@@ -1566,9 +1594,18 @@ document.addEventListener('DOMContentLoaded', function() {
         updateProductionRateDisplay();
 
         // Gerar gráficos
-        await generateHourlyProductionChart(productionData);
+        await generateHourlyProductionChart(productionData, {
+            canvas: analysisHourlyProductionChart,
+            targetCanvasId: 'analysis-hourly-production-chart',
+            chartContext: 'analysis',
+            dailyTargetOverride: totalPlan,
+            updateTimeline: false
+        });
         await generateShiftProductionChart(productionData);
-        // await generateMachineProductionTimeline(productionData); // TODO: implementar
+        await generateMachineProductionTimeline(productionData, {
+            canvas: analysisMachineProductionTimelineChart,
+            targetCanvasId: 'analysis-machine-production-timeline'
+        });
     }
 
     function updateProductionRateToggle() {
@@ -1725,8 +1762,8 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('quality-value').textContent = `${oeeData.quality.toFixed(1)}%`;
 
         // Gerar gráficos
-        await generateOEEComponentsTimeline(startDate, endDate, machine);
-        await generateOEEHeatmap(startDate, endDate);
+    await generateOEEComponentsTimeline(startDate, endDate, machine);
+    await generateOEEHeatmap(startDate, endDate, machine);
     }
 
     // Função para carregar análise de perdas
@@ -1912,7 +1949,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const chartTests = [
             { name: 'OEE Distribution', canvasId: 'oee-distribution-chart', view: 'overview' },
             { name: 'Hourly Production', canvasId: 'hourly-production-chart', view: 'production' },
+            { name: 'Analysis Hourly Production', canvasId: 'analysis-hourly-production-chart', view: 'analysis-production' },
             { name: 'Shift Production', canvasId: 'shift-production-chart', view: 'production' },
+            { name: 'Machine Production Timeline', canvasId: 'analysis-machine-production-timeline', view: 'analysis-production' },
             { name: 'OEE Components Timeline', canvasId: 'oee-components-timeline', view: 'efficiency' },
             { name: 'Losses Pareto', canvasId: 'losses-pareto-chart', view: 'losses' },
             { name: 'Losses by Machine', canvasId: 'losses-by-machine-chart', view: 'losses' },
@@ -2482,22 +2521,38 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Gráfico de produção por hora
-    async function generateHourlyProductionChart(productionData) {
-        const canvas = document.getElementById('hourly-production-chart');
-        if (!canvas) return;
+    async function generateHourlyProductionChart(productionData, options = {}) {
+        const {
+            canvas: providedCanvas = null,
+            targetCanvasId = 'hourly-production-chart',
+            chartContext = 'main',
+            dailyTargetOverride = null,
+            updateTimeline = chartContext === 'main'
+        } = options;
 
-        if (hourlyChartInstance) {
+        const canvas = providedCanvas || document.getElementById(targetCanvasId);
+        if (!canvas) return;
+        const canvasId = canvas.id || targetCanvasId;
+
+        if (chartContext === 'analysis') {
+            if (analysisHourlyChartInstance) {
+                analysisHourlyChartInstance.destroy();
+                analysisHourlyChartInstance = null;
+            }
+        } else if (hourlyChartInstance) {
             hourlyChartInstance.destroy();
             hourlyChartInstance = null;
         }
 
         if (!Array.isArray(productionData) || productionData.length === 0) {
-            showNoDataMessage('hourly-production-chart');
-            updateTimelineProgress(0, 0, 0);
+            showNoDataMessage(canvasId);
+            if (updateTimeline) {
+                updateTimelineProgress(0, 0, 0);
+            }
             return;
         }
 
-        clearNoDataMessage('hourly-production-chart');
+        clearNoDataMessage(canvasId);
 
         const orderedHours = getProductionHoursOrder();
         const executedByHour = Object.fromEntries(orderedHours.map(label => [label, 0]));
@@ -2510,27 +2565,39 @@ document.addEventListener('DOMContentLoaded', function() {
             executedByHour[label] = (executedByHour[label] || 0) + (Number(item.quantity) || 0);
         });
 
-        const dailyTarget = Number(selectedMachineData?.daily_target) || 1000;
-        const hourlyTarget = dailyTarget / HOURS_IN_PRODUCTION_DAY;
+        const overrideTarget = Number(dailyTargetOverride);
+        let dailyTarget = Number.isFinite(overrideTarget) && overrideTarget > 0 ? overrideTarget : Number(selectedMachineData?.daily_target) || 1000;
+        if (!Number.isFinite(dailyTarget) || dailyTarget < 0) {
+            dailyTarget = 0;
+        }
+
+        const hourlyTarget = HOURS_IN_PRODUCTION_DAY > 0 ? (dailyTarget / HOURS_IN_PRODUCTION_DAY) : 0;
 
         const executedSeries = orderedHours.map(label => executedByHour[label] || 0);
         const plannedSeries = orderedHours.map(() => hourlyTarget);
 
         const totalExecuted = executedSeries.reduce((sum, value) => sum + value, 0);
-        const totalPlanned = dailyTarget;
+        const totalPlanned = Math.max(0, dailyTarget);
         const hoursElapsed = getHoursElapsedInProductionDay(new Date());
-        const expectedByNow = Math.min(hoursElapsed * hourlyTarget, totalPlanned);
+        const expectedByNow = totalPlanned > 0 ? Math.min(hoursElapsed * hourlyTarget, totalPlanned) : 0;
 
-        hourlyChartInstance = createHourlyProductionChart({
+        const instance = createHourlyProductionChart({
             canvas,
             labels: orderedHours,
             executedPerHour: executedSeries,
             plannedPerHour: plannedSeries,
-            highlightCurrentHour: true
+            highlightCurrentHour: chartContext === 'main'
         });
 
-        // Atualizar timeline de progresso
-        updateTimelineProgress(totalExecuted, totalPlanned, expectedByNow);
+        if (chartContext === 'analysis') {
+            analysisHourlyChartInstance = instance;
+        } else {
+            hourlyChartInstance = instance;
+        }
+
+        if (updateTimeline) {
+            updateTimelineProgress(totalExecuted, totalPlanned, expectedByNow);
+        }
 
     }
 
@@ -2763,6 +2830,123 @@ document.addEventListener('DOMContentLoaded', function() {
                         callbacks: {
                             label: function(context) {
                                 return `${context.parsed.y} pcs`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    async function generateMachineProductionTimeline(productionData, options = {}) {
+        const {
+            canvas: providedCanvas = null,
+            targetCanvasId = 'analysis-machine-production-timeline',
+            maxMachines = 6
+        } = options;
+
+        const canvas = providedCanvas || document.getElementById(targetCanvasId);
+        if (!canvas) return;
+        const canvasId = canvas.id || targetCanvasId;
+
+        if (machineProductionTimelineInstance) {
+            machineProductionTimelineInstance.destroy();
+            machineProductionTimelineInstance = null;
+        }
+
+        if (!Array.isArray(productionData) || productionData.length === 0) {
+            showNoDataMessage(canvasId);
+            return;
+        }
+
+        const dateSet = new Set();
+        const totalsByMachine = new Map();
+        const totalsByMachineDate = new Map();
+
+        productionData.forEach(item => {
+            const machine = (item?.machine || 'Sem máquina').toString();
+            const rawDate = item?.workDay || item?.date || '';
+            const dateKey = rawDate ? String(rawDate).slice(0, 10) : '';
+            if (!dateKey) return;
+            const quantity = Number(item?.quantity) || 0;
+
+            dateSet.add(dateKey);
+            totalsByMachine.set(machine, (totalsByMachine.get(machine) || 0) + quantity);
+            const compositeKey = `${machine}__${dateKey}`;
+            totalsByMachineDate.set(compositeKey, (totalsByMachineDate.get(compositeKey) || 0) + quantity);
+        });
+
+        if (dateSet.size === 0 || totalsByMachine.size === 0) {
+            showNoDataMessage(canvasId);
+            return;
+        }
+
+        const sortedDates = Array.from(dateSet).sort();
+        const displayLabels = sortedDates.map(formatShortDateLabel);
+        const machinesSorted = Array.from(totalsByMachine.entries())
+            .sort((a, b) => b[1] - a[1])
+            .map(entry => entry[0]);
+
+        const machinesToPlot = machinesSorted.slice(0, Math.max(1, maxMachines));
+
+        clearNoDataMessage(canvasId);
+
+        const datasets = machinesToPlot.map((machine, index) => {
+            const colors = ANALYSIS_LINE_COLORS[index % ANALYSIS_LINE_COLORS.length];
+            const points = sortedDates.map(dateKey => totalsByMachineDate.get(`${machine}__${dateKey}`) || 0);
+            return {
+                label: machine,
+                data: points,
+                borderColor: colors.border,
+                backgroundColor: colors.fill,
+                tension: 0.3,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                fill: false
+            };
+        });
+
+        const context = canvas.getContext('2d');
+        machineProductionTimelineInstance = new Chart(context, {
+            type: 'line',
+            data: {
+                labels: displayLabels,
+                datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: (value) => `${Number(value).toLocaleString('pt-BR')} pcs`
+                        },
+                        title: {
+                            display: true,
+                            text: 'Peças'
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            maxRotation: 0
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            boxWidth: 12
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => {
+                                const label = context.dataset?.label || '';
+                                const value = Number(context.parsed.y) || 0;
+                                return `${label}: ${value.toLocaleString('pt-BR')} pcs`;
                             }
                         }
                     }
@@ -3921,74 +4105,147 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Gerar mapa de calor OEE
-    async function generateOEEHeatmap(startDate, endDate) {
+    async function generateOEEHeatmap(startDate, endDate, machineFilter = 'all') {
         const container = document.getElementById('oee-heatmap');
         if (!container) return;
 
-        const machineNames = ['Máquina 01', 'Máquina 02', 'Máquina 03', 'Máquina 04'];
-        const shifts = ['1º Turno', '2º Turno', '3º Turno'];
-        
-        let html = `
-            <div class="overflow-x-auto">
-                <table class="min-w-full">
-                    <thead>
-                        <tr>
-                            <th class="px-4 py-2 text-left">Máquina / Turno</th>
-                            ${shifts.map(shift => `<th class="px-4 py-2 text-center">${shift}</th>`).join('')}
-                        </tr>
-                    </thead>
-                    <tbody>
-        `;
+        const normalizedMachine = (machineFilter && machineFilter !== 'all') ? machineFilter : 'all';
 
-        machineNames.forEach(machine => {
-            html += `<tr><td class="px-4 py-2 font-semibold">${machine}</td>`;
-            
-            shifts.forEach(() => {
-                const oee = 60 + Math.random() * 30; // OEE entre 60% e 90%
-                let colorClass = '';
-                
-                if (oee >= 80) colorClass = 'bg-green-500 text-white';
-                else if (oee >= 70) colorClass = 'bg-yellow-500 text-white';
-                else if (oee >= 60) colorClass = 'bg-orange-500 text-white';
-                else colorClass = 'bg-red-500 text-white';
-                
-                html += `
-                    <td class="px-4 py-2 text-center">
-                        <div class="heatmap-cell ${colorClass} rounded-lg p-2 m-1 cursor-pointer transition-all hover:scale-110">
-                            ${oee.toFixed(1)}%
-                        </div>
-                    </td>
+        try {
+            const [productionData, lossesData, downtimeData, planData] = await Promise.all([
+                getFilteredData('production', startDate, endDate, normalizedMachine, 'all'),
+                getFilteredData('losses', startDate, endDate, normalizedMachine, 'all'),
+                getFilteredData('downtime', startDate, endDate, normalizedMachine, 'all'),
+                getFilteredData('plan', startDate, endDate, normalizedMachine, 'all')
+            ]);
+
+            const { groups } = aggregateOeeMetrics(
+                productionData,
+                lossesData,
+                downtimeData,
+                planData,
+                'all'
+            );
+
+            if (!Array.isArray(groups) || groups.length === 0) {
+                container.innerHTML = `
+                    <div class="p-6 text-center text-sm text-slate-500 bg-slate-100 rounded-lg">
+                        Nenhum dado de OEE encontrado para o período selecionado.
+                    </div>
                 `;
+                return;
+            }
+
+            const shiftLabels = [
+                { key: 1, label: '1º Turno' },
+                { key: 2, label: '2º Turno' },
+                { key: 3, label: '3º Turno' }
+            ];
+
+            const machineMap = new Map();
+            const groupsMap = new Map();
+
+            groups.forEach(item => {
+                const machineId = item.machine || 'Sem máquina';
+                machineMap.set(machineId, machineId);
+                const groupKey = `${machineId}__${item.shift}`;
+                groupsMap.set(groupKey, {
+                    oee: Number(item.oee) * 100,
+                    disponibilidade: Number(item.disponibilidade) * 100,
+                    performance: Number(item.performance) * 100,
+                    qualidade: Number(item.qualidade) * 100
+                });
             });
-            
-            html += '</tr>';
-        });
 
-        html += `
-                    </tbody>
-                </table>
-            </div>
-            <div class="mt-4 flex items-center justify-center gap-4 text-sm">
-                <div class="flex items-center gap-2">
-                    <div class="w-4 h-4 bg-green-500 rounded"></div>
-                    <span>≥ 80%</span>
-                </div>
-                <div class="flex items-center gap-2">
-                    <div class="w-4 h-4 bg-yellow-500 rounded"></div>
-                    <span>70-79%</span>
-                </div>
-                <div class="flex items-center gap-2">
-                    <div class="w-4 h-4 bg-orange-500 rounded"></div>
-                    <span>60-69%</span>
-                </div>
-                <div class="flex items-center gap-2">
-                    <div class="w-4 h-4 bg-red-500 rounded"></div>
-                    <span>&lt; 60%</span>
-                </div>
-            </div>
-        `;
+            let machinesSorted = Array.from(machineMap.values());
+            const hasMachineFilter = normalizedMachine !== 'all';
+            if (!hasMachineFilter) {
+                machinesSorted.sort((a, b) => a.localeCompare(b));
+            }
 
-        container.innerHTML = html;
+            const resolveColorClass = (value) => {
+                if (!Number.isFinite(value)) return 'bg-slate-200 text-slate-500';
+                if (value >= 80) return 'bg-emerald-500 text-white';
+                if (value >= 70) return 'bg-yellow-400 text-slate-900';
+                if (value >= 60) return 'bg-orange-500 text-white';
+                return 'bg-red-500 text-white';
+            };
+
+            let html = `
+                <div class="overflow-x-auto">
+                    <table class="min-w-full">
+                        <thead>
+                            <tr>
+                                <th class="px-4 py-2 text-left">Máquina / Turno</th>
+                                ${shiftLabels.map(shift => `<th class="px-4 py-2 text-center">${shift.label}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            machinesSorted.forEach(machineId => {
+                html += `<tr><td class="px-4 py-2 font-semibold text-slate-800">${machineId}</td>`;
+
+                shiftLabels.forEach(({ key }) => {
+                    const metric = groupsMap.get(`${machineId}__${key}`);
+                    if (metric) {
+                        const value = Number.isFinite(metric.oee) ? metric.oee : 0;
+                        const colorClass = resolveColorClass(value);
+                        const title = `Disponibilidade: ${metric.disponibilidade.toFixed(1)}%\nPerformance: ${metric.performance.toFixed(1)}%\nQualidade: ${metric.qualidade.toFixed(1)}%`;
+                        html += `
+                            <td class="px-4 py-2 text-center">
+                                <div class="heatmap-cell ${colorClass} rounded-lg p-2 m-1 cursor-pointer transition-all hover:scale-105" title="${title}">
+                                    ${value.toFixed(1)}%
+                                </div>
+                            </td>
+                        `;
+                    } else {
+                        html += `
+                            <td class="px-4 py-2 text-center">
+                                <div class="heatmap-cell bg-slate-100 text-slate-400 rounded-lg p-2 m-1">
+                                    --
+                                </div>
+                            </td>
+                        `;
+                    }
+                });
+
+                html += '</tr>';
+            });
+
+            html += `
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-4 flex items-center justify-center gap-4 text-sm">
+                    <div class="flex items-center gap-2">
+                        <div class="w-4 h-4 bg-emerald-500 rounded"></div>
+                        <span>≥ 80%</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="w-4 h-4 bg-yellow-400 rounded"></div>
+                        <span>70-79%</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="w-4 h-4 bg-orange-500 rounded"></div>
+                        <span>60-69%</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="w-4 h-4 bg-red-500 rounded"></div>
+                        <span>&lt; 60%</span>
+                    </div>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        } catch (error) {
+            console.error('[OEE][HEATMAP] Erro ao gerar mapa de calor', error);
+            container.innerHTML = `
+                <div class="p-6 text-center text-sm text-red-600 bg-red-50 rounded-lg">
+                    Erro ao carregar mapa de calor. Tente novamente.
+                </div>
+            `;
+        }
     }
 
     // Funções de comparação faltantes
@@ -6731,10 +6988,10 @@ document.addEventListener('DOMContentLoaded', function() {
             const oeePercent = Math.max(0, Math.min((oeeShiftData?.oee || 0) * 100, 100));
             const oeePercentText = oeePercent ? oeePercent.toFixed(1) : '0.0';
             const oeeColorClass = oeePercent >= 85 ? 'text-emerald-600' : oeePercent >= 70 ? 'text-amber-500' : 'text-red-500';
-            // Cálculos de KPIs (Ritmo, Tempo rodando/paradas, Qualidade/Perdas)
+            // Cálculos de KPIs (Tempo rodando/paradas, Qualidade/Perdas)
             const nowRef = new Date();
             const shiftStart = getShiftStartDateTime(nowRef);
-            let currentRate = 0, necessaryRate = 0, runtimeHours = 0, downtimeHours = 0;
+            let runtimeHours = 0, downtimeHours = 0;
             if (shiftStart instanceof Date && !Number.isNaN(shiftStart.getTime())) {
                 const elapsedSec = Math.max(0, Math.floor((nowRef.getTime() - shiftStart.getTime()) / 1000));
                 if (elapsedSec > 0) {
@@ -6742,22 +6999,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     const runtimeSec = calculateProductionRuntimeSeconds({ shiftStart, now: nowRef, downtimes: dts });
                     runtimeHours = Math.max(0, runtimeSec / 3600);
                     downtimeHours = Math.max(0, (elapsedSec / 3600) - runtimeHours);
-                    currentRate = runtimeHours > 0 ? (data.totalProduced / runtimeHours) : 0;
-                    const workDay = getProductionDateString(nowRef);
-                    let prodDayEnd = combineDateAndTime(workDay, '07:00');
-                    if (nowRef.getHours() >= PRODUCTION_DAY_START_HOUR) {
-                        prodDayEnd.setDate(prodDayEnd.getDate() + 1);
-                    }
-                    const remainingSec = Math.max(0, Math.floor((prodDayEnd.getTime() - nowRef.getTime()) / 1000));
-                    const remainingHours = remainingSec / 3600;
-                    const remainingQty = Math.max(0, plannedQty - data.totalProduced);
-                    necessaryRate = remainingHours > 0 ? (remainingQty / remainingHours) : 0;
                 }
-            }
-            let rateColorClass = 'text-slate-400';
-            if (necessaryRate > 0) {
-                const ratio = currentRate / necessaryRate;
-                rateColorClass = ratio >= 0.95 ? 'text-emerald-600' : (ratio >= 0.75 ? 'text-amber-600' : 'text-red-600');
             }
             const lossesKg = Number(data.totalLossesKg) || 0;
             const pieceWeight = Number(plan.piece_weight) || 0;
@@ -6783,13 +7025,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             ${mpLine}
                         </div>
                         <div class="text-right">
-                            <div class="text-xs uppercase tracking-wide text-slate-500">Ritmo</div>
-                            <div class="font-semibold leading-tight">
-                                <span class="text-slate-700">${currentRate.toFixed(1)} pcs/h</span>
-                                <span class="text-slate-400"> / </span>
-                                <span class="${rateColorClass}">${necessaryRate.toFixed(1)} nec.</span>
-                            </div>
-                            <div class="mt-2 flex gap-2 justify-end text-[11px]">
+                            <div class="flex gap-2 justify-end text-[11px]">
                                 <span class="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700" title="Tempo efetivo rodando no turno">${runtimeHours.toFixed(1)}h rodando</span>
                                 <span class="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700" title="Tempo em paradas no turno">${downtimeHours.toFixed(1)}h paradas</span>
                             </div>
