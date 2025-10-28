@@ -5418,6 +5418,11 @@ document.addEventListener('DOMContentLoaded', function() {
             btnManualProduction.addEventListener('click', openManualProductionModal);
         }
 
+        const btnManualLosses = document.getElementById('btn-manual-losses');
+        if (btnManualLosses) {
+            btnManualLosses.addEventListener('click', openManualLossesModal);
+        }
+
         // Botão de lançamento manual de parada
         const btnManualDowntime = document.getElementById('btn-manual-downtime');
         if (btnManualDowntime) {
@@ -5457,14 +5462,23 @@ document.addEventListener('DOMContentLoaded', function() {
         if (quickDowntimeCancel) quickDowntimeCancel.addEventListener('click', () => closeModal('quick-downtime-modal'));
         if (quickDowntimeForm) quickDowntimeForm.addEventListener('submit', handleDowntimeSubmit);
         
-    // Modal de produção manual
-    const manualProductionClose = document.getElementById('manual-production-close');
-    const manualProductionCancel = document.getElementById('manual-production-cancel');
-    const manualProductionForm = document.getElementById('manual-production-form');
+        // Modal de produção manual
+        const manualProductionClose = document.getElementById('manual-production-close');
+        const manualProductionCancel = document.getElementById('manual-production-cancel');
+        const manualProductionForm = document.getElementById('manual-production-form');
 
-    if (manualProductionClose) manualProductionClose.addEventListener('click', () => closeModal('manual-production-modal'));
-    if (manualProductionCancel) manualProductionCancel.addEventListener('click', () => closeModal('manual-production-modal'));
-    if (manualProductionForm) manualProductionForm.addEventListener('submit', handleManualProductionSubmit);
+        if (manualProductionClose) manualProductionClose.addEventListener('click', () => closeModal('manual-production-modal'));
+        if (manualProductionCancel) manualProductionCancel.addEventListener('click', () => closeModal('manual-production-modal'));
+        if (manualProductionForm) manualProductionForm.addEventListener('submit', handleManualProductionSubmit);
+
+        // Modal de perdas manual
+        const manualLossesClose = document.getElementById('manual-losses-close');
+        const manualLossesCancel = document.getElementById('manual-losses-cancel');
+        const manualLossesForm = document.getElementById('manual-losses-form');
+
+        if (manualLossesClose) manualLossesClose.addEventListener('click', () => closeModal('manual-losses-modal'));
+        if (manualLossesCancel) manualLossesCancel.addEventListener('click', () => closeModal('manual-losses-modal'));
+        if (manualLossesForm) manualLossesForm.addEventListener('submit', handleManualLossesSubmit);
 
         // Modal de parada manual
         const manualDowntimeClose = document.getElementById('manual-downtime-close');
@@ -5521,6 +5535,34 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         openModal('manual-production-modal');
+    }
+
+    function openManualLossesModal() {
+        currentEditContext = null;
+        if (!selectedMachineData) {
+            alert('Selecione uma máquina primeiro.');
+            return;
+        }
+
+        const dateInput = document.getElementById('manual-losses-date');
+        if (dateInput) {
+            dateInput.value = getProductionDateString();
+        }
+
+        const shiftSelect = document.getElementById('manual-losses-shift');
+        if (shiftSelect) {
+            shiftSelect.value = String(getCurrentShift());
+        }
+
+        const hourInput = document.getElementById('manual-losses-hour');
+        if (hourInput) {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            hourInput.value = `${hours}:${minutes}`;
+        }
+
+        openModal('manual-losses-modal');
     }
 
     function closeModal(modalId) {
@@ -5728,6 +5770,174 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch (error) {
             console.error('Erro ao registrar produção manual: ', error);
             alert('Erro ao registrar produção manual. Tente novamente.');
+        }
+    }
+
+    async function handleManualLossesSubmit(e) {
+        e.preventDefault();
+
+        if (!window.authSystem.checkPermissionForAction('add_losses')) {
+            return;
+        }
+
+        if (!selectedMachineData) {
+            alert('Nenhuma máquina selecionada. Selecione uma máquina para registrar as perdas.');
+            return;
+        }
+
+        const dateInput = document.getElementById('manual-losses-date');
+        const shiftSelect = document.getElementById('manual-losses-shift');
+        const hourInput = document.getElementById('manual-losses-hour');
+        const qtyInput = document.getElementById('manual-losses-qty');
+        const weightInput = document.getElementById('manual-losses-weight');
+        const reasonSelect = document.getElementById('manual-losses-reason');
+        const obsInput = document.getElementById('manual-losses-obs');
+        const photoInput = document.getElementById('manual-losses-photo');
+
+        const dateValue = (dateInput?.value || '').trim();
+        const shiftRaw = shiftSelect?.value || '';
+        const hourValue = (hourInput?.value || '').trim();
+        const quantityValue = parseInt(qtyInput?.value || '0', 10);
+        const weightValue = parseFloat(weightInput?.value || '0');
+        const reasonValue = reasonSelect?.value || '';
+        const observations = (obsInput?.value || '').trim();
+        const photoFile = photoInput?.files?.[0] || null;
+
+        if (!dateValue) {
+            alert('Informe a data referente à perda.');
+            if (dateInput) dateInput.focus();
+            return;
+        }
+
+        const hasQuantity = Number.isFinite(quantityValue) && quantityValue > 0;
+        const hasWeight = Number.isFinite(weightValue) && weightValue > 0;
+
+        if (!hasQuantity && !hasWeight) {
+            alert('Informe a quantidade de peças perdidas ou o peso em borras (kg).');
+            if (qtyInput && (!qtyInput.value || qtyInput.value === '')) {
+                qtyInput.focus();
+            } else if (weightInput) {
+                weightInput.focus();
+            }
+            return;
+        }
+
+        if (!reasonValue) {
+            alert('Selecione o motivo da perda.');
+            if (reasonSelect) reasonSelect.focus();
+            return;
+        }
+
+        const planId = selectedMachineData?.id || null;
+        if (!planId) {
+            alert('Não foi possível identificar o planejamento associado a esta máquina.');
+            return;
+        }
+
+        const resolveAveragePieceWeight = () => {
+            if (!selectedMachineData) return 0;
+            const candidates = [
+                selectedMachineData.piece_weight,
+                selectedMachineData.weight,
+                selectedMachineData.produto?.weight,
+                selectedMachineData.mp_weight
+            ];
+            for (const candidate of candidates) {
+                const parsed = parseFloat(candidate);
+                if (Number.isFinite(parsed) && parsed > 0) {
+                    return parsed;
+                }
+            }
+            return 0;
+        };
+
+        let refugoQty = hasQuantity ? quantityValue : 0;
+        let pesoTotalKg = hasWeight ? weightValue : 0;
+        const pieceWeightGrams = resolveAveragePieceWeight();
+
+        if (refugoQty <= 0 && pesoTotalKg > 0) {
+            if (pieceWeightGrams > 0) {
+                refugoQty = Math.max(1, Math.round((pesoTotalKg * 1000) / pieceWeightGrams));
+                showNotification(`Convertido: ${pesoTotalKg}kg = ${refugoQty} peças`, 'info');
+            } else {
+                alert('Não foi possível converter o peso em peças porque o peso médio não está configurado. Informe a quantidade manualmente.');
+                return;
+            }
+        }
+
+        if (pesoTotalKg <= 0 && refugoQty > 0 && pieceWeightGrams > 0) {
+            pesoTotalKg = (refugoQty * pieceWeightGrams) / 1000;
+        }
+
+        if (refugoQty <= 0) {
+            alert('Não foi possível determinar a quantidade de peças perdidas. Verifique os valores informados.');
+            return;
+        }
+
+        let photoUrl = null;
+        let photoStoragePath = null;
+        if (photoFile) {
+            try {
+                const uploadResult = await uploadEvidencePhoto(photoFile, `losses/${planId}`);
+                photoUrl = uploadResult?.url || null;
+                photoStoragePath = uploadResult?.path || null;
+            } catch (error) {
+                console.error('Erro ao enviar foto da perda manual:', error);
+                if (error?.message === 'storage-not-configured') {
+                    alert('Não foi possível salvar a foto porque o armazenamento não está configurado.');
+                } else {
+                    alert('Erro ao enviar a foto. O registro não foi salvo.');
+                }
+                return;
+            }
+        }
+
+        const shiftNumeric = parseInt(shiftRaw, 10);
+        const turno = [1, 2, 3].includes(shiftNumeric) ? shiftNumeric : getCurrentShift();
+        const horaInformada = hourValue && /^\d{2}:\d{2}$/.test(hourValue) ? hourValue : null;
+        const dataHoraInformada = horaInformada ? `${dateValue}T${horaInformada}` : null;
+        const currentUser = window.authSystem.getCurrentUser?.() || {};
+
+        const payloadBase = {
+            planId,
+            data: dateValue,
+            turno,
+            produzido: 0,
+            peso_bruto: 0,
+            refugo_kg: Number.isFinite(pesoTotalKg) && pesoTotalKg > 0 ? Number(pesoTotalKg) : 0,
+            refugo_qty: refugoQty,
+            perdas: reasonValue,
+            observacoes: observations,
+            machine: selectedMachineData.machine || null,
+            mp: selectedMachineData.mp || '',
+            manual: true,
+            horaInformada,
+            dataHoraInformada,
+            registradoPor: currentUser.username || null,
+            registradoPorNome: currentUser.name || null,
+            photoUrl,
+            photoStoragePath
+        };
+
+        console.log('[TRACE][handleManualLossesSubmit] prepared payload', payloadBase);
+
+        try {
+            await db.collection('production_entries').add({
+                ...payloadBase,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            closeModal('manual-losses-modal');
+            await loadHourlyProductionChart();
+            await loadTodayStats();
+            await loadRecentEntries(false);
+            await refreshAnalysisIfActive();
+
+            showNotification('Perda manual registrada com sucesso!', 'success');
+        } catch (error) {
+            console.error('Erro ao registrar perda manual: ', error);
+            alert('Erro ao registrar perda manual. Tente novamente.');
         }
     }
 
@@ -6974,9 +7184,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const normalizedProgress = Math.max(0, Math.min(progressPercentRaw, 100));
             const progressPalette = resolveProgressPalette(progressPercentRaw);
             const progressTextClass = progressPalette.textClass || 'text-slate-600';
-            // Exibir no texto um valor limitado a 100% para evitar confundir com percentuais muito maiores
-            const displayPercent = Math.max(0, Math.min(progressPercentRaw, 100));
-            const progressDisplay = `${displayPercent.toFixed(displayPercent >= 100 ? 0 : 1)}%`;
+            const progressText = `${Math.max(0, progressPercentRaw).toFixed(progressPercentRaw >= 100 ? 0 : 1)}%`;
+            const remainingQty = Math.max(0, plannedQty - data.totalProduced);
 
             machineProgressInfo[machine] = {
                 normalizedProgress,
@@ -7055,21 +7264,38 @@ document.addEventListener('DOMContentLoaded', function() {
                             <p class="font-semibold text-slate-700">${(Number(lossesKg) || 0).toFixed(2)} kg</p>
                         </div>
                     </div>
-                    <div class="mt-4 border-t border-slate-200 pt-3 flex items-center justify-between text-sm">
-                        <div>
-                            <span class="text-xs uppercase tracking-wide text-slate-500">Planejado</span>
-                            <p class="font-semibold text-slate-700">${formatQty(plannedQty)}</p>
-                        </div>
-                        <div class="text-right">
-                            <span class="text-xs uppercase tracking-wide text-slate-500">Produzido</span>
-                            <p class="font-semibold text-slate-700">${formatQty(data.totalProduced)}</p>
+                    <div class="mt-4 border-t border-slate-200 pt-3">
+                        <div class="flex items-center gap-4">
+                            <div class="relative w-20 h-20">
+                                <canvas id="progress-donut-${machine}" class="w-full h-full"></canvas>
+                                <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+                                    <span class="text-[11px] uppercase tracking-wide text-slate-400">Executado</span>
+                                    <span class="text-sm font-semibold ${progressTextClass}">${progressText}</span>
+                                </div>
+                            </div>
+                            <div class="flex-1 text-sm space-y-2">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs uppercase tracking-wide text-slate-500">Planejado</span>
+                                    <span class="font-semibold text-slate-700">${formatQty(plannedQty)}</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs uppercase tracking-wide text-slate-500">Produzido</span>
+                                    <span class="font-semibold text-slate-700">${formatQty(data.totalProduced)}</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs uppercase tracking-wide text-slate-500">Restante</span>
+                                    <span class="font-semibold text-slate-700">${formatQty(remainingQty)}</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             `;
         }).join('');
 
-        // Gráfico de rosca removido; exibimos KPIs no lugar
+        machineOrder.forEach(machine => {
+            renderMachineCardProgress(machine, machineProgressInfo[machine]);
+        });
 
         if (selectedMachineData && selectedMachineData.machine && machineCardData[selectedMachineData.machine]) {
             setActiveMachineCard(selectedMachineData.machine);
@@ -7082,6 +7308,55 @@ document.addEventListener('DOMContentLoaded', function() {
             updateRecentEntriesEmptyMessage('Selecione uma máquina para visualizar os lançamentos.');
             setRecentEntriesState({ loading: false, empty: true });
         }
+    }
+
+    function renderMachineCardProgress(machine, progressInfo) {
+        if (!machine || !progressInfo) return;
+
+        const canvasId = `progress-donut-${machine}`;
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) {
+            return;
+        }
+
+        if (machineCardCharts[machine]) {
+            try {
+                machineCardCharts[machine].destroy();
+            } catch (error) {
+                console.warn('[TRACE][renderMachineCardProgress] falha ao destruir gráfico anterior', { machine, error });
+            }
+        }
+
+        const executed = Math.max(0, Math.min(progressInfo.normalizedProgress ?? 0, 100));
+        const remainder = Math.max(0, 100 - executed);
+        const primaryColor = progressInfo.palette?.start || '#2563EB';
+        const secondaryColor = hexWithAlpha(primaryColor, 0.18);
+
+        machineCardCharts[machine] = new Chart(canvas, {
+            type: 'doughnut',
+            data: {
+                datasets: [{
+                    data: [executed, remainder],
+                    backgroundColor: [primaryColor, secondaryColor],
+                    borderWidth: 0,
+                    hoverOffset: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '70%',
+                rotation: -90,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: false }
+                },
+                animation: {
+                    animateRotate: executed > 0,
+                    duration: 600
+                }
+            }
+        });
     }
 
     // Função para popular o seletor de máquinas (e cards)
