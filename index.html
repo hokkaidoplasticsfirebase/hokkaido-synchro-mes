@@ -411,10 +411,14 @@
                             </div>
                             
                             <!-- Botões de Lançamentos Manuais -->
-                            <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <button id="btn-manual-production" class="w-full bg-blue-50 hover:bg-blue-100 text-blue-700 p-4 rounded-lg shadow-md border border-blue-200 flex items-center justify-center gap-3 transition-all duration-200">
                                     <i data-lucide="history" class="w-5 h-5"></i>
                                     <span class="font-semibold text-sm md:text-base text-center">Lançamento Manual de Produção</span>
+                                </button>
+                                <button id="btn-manual-losses" class="w-full bg-orange-50 hover:bg-orange-100 text-orange-700 p-4 rounded-lg shadow-md border border-orange-200 flex items-center justify-center gap-3 transition-all duration-200">
+                                    <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+                                    <span class="font-semibold text-sm md:text-base text-center">Lançamento Manual de Perdas</span>
                                 </button>
                                 <button id="btn-manual-downtime" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 p-4 rounded-lg shadow-md border border-gray-300 flex items-center justify-center gap-3 transition-all duration-200">
                                     <i data-lucide="clock" class="w-5 h-5"></i>
@@ -1332,6 +1336,107 @@
             </form>
         </div>
     </div>
+
+        <!-- Modal de Lançamento Manual de Perdas -->
+        <div id="manual-losses-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
+            <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+                <div class="flex justify-between items-center border-b pb-4 mb-6">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
+                            <i data-lucide="alert-triangle" class="w-5 h-5 text-orange-600"></i>
+                        </div>
+                        <h3 class="text-xl font-bold text-gray-800">Lançamento Manual de Perdas</h3>
+                    </div>
+                    <button id="manual-losses-close" type="button" class="p-2 rounded-full hover:bg-gray-100">
+                        <i data-lucide="x" class="w-5 h-5 text-gray-500"></i>
+                    </button>
+                </div>
+                <form id="manual-losses-form" class="space-y-4">
+                    <div class="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                        <p class="text-sm text-orange-800">
+                            <i data-lucide="info" class="w-4 h-4 inline mr-1"></i>
+                            Informe ao menos a quantidade de peças perdidas ou o peso em borras (kg). Utilize a data e o turno para registrar apontamentos retroativos.
+                        </p>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label for="manual-losses-date" class="block text-sm font-medium text-gray-700 mb-2">Data da Perda</label>
+                            <input type="date" id="manual-losses-date" name="date" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" required>
+                        </div>
+                        <div>
+                            <label for="manual-losses-hour" class="block text-sm font-medium text-gray-700 mb-2">Horário (opcional)</label>
+                            <input type="time" id="manual-losses-hour" name="hour" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label for="manual-losses-shift" class="block text-sm font-medium text-gray-700 mb-2">Turno</label>
+                            <select id="manual-losses-shift" name="shift" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent">
+                                <option value="1">1º Turno</option>
+                                <option value="2">2º Turno</option>
+                                <option value="3">3º Turno</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="manual-losses-qty" class="block text-sm font-medium text-gray-700 mb-2">Quantidade Perdida (peças)</label>
+                            <input type="number" id="manual-losses-qty" name="quantity" min="0" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" placeholder="Peças refugadas">
+                        </div>
+                    </div>
+                    <div>
+                        <label for="manual-losses-weight" class="block text-sm font-medium text-gray-700 mb-2">Borras / Peso Perdido (kg)</label>
+                        <input type="number" step="0.01" id="manual-losses-weight" name="weight" min="0" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" placeholder="Peso total em kg">
+                    </div>
+                    <div>
+                        <label for="manual-losses-reason" class="block text-sm font-medium text-gray-700 mb-2">Motivo da Perda</label>
+                        <select id="manual-losses-reason" name="reason" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" required>
+                            <option value="">Selecione o motivo...</option>
+                            <optgroup label="PROCESSO">
+                                <option value="BOLHA">BOLHA</option>
+                                <option value="CHUPAGEM">CHUPAGEM</option>
+                                <option value="CONTAMINAÇÃO">CONTAMINAÇÃO</option>
+                                <option value="DEGRADAÇÃO">DEGRADAÇÃO</option>
+                                <option value="EMPENAMENTO">EMPENAMENTO</option>
+                                <option value="FALHA">FALHA</option>
+                                <option value="FIAPO">FIAPO</option>
+                                <option value="FORA DE COR">FORA DE COR</option>
+                                <option value="INÍCIO/REÍNICIO">INÍCIO/REÍNÍCIO</option>
+                                <option value="JUNÇÃO">JUNÇÃO</option>
+                                <option value="MANCHAS">MANCHAS</option>
+                                <option value="MEDIDA FORA DO ESPECIFICADO">MEDIDA FORA DO ESPECIFICADO</option>
+                                <option value="MOÍDO">MOÍDO</option>
+                                <option value="PEÇAS PERDIDAS">PEÇAS PERDIDAS</option>
+                                <option value="QUEIMA">QUEIMA</option>
+                                <option value="REBARBA">REBARBA</option>
+                            </optgroup>
+                            <optgroup label="FERRAMENTARIA">
+                                <option value="DEFORMAÇÃO">DEFORMAÇÃO</option>
+                                <option value="GALHO PRESO">GALHO PRESO</option>
+                                <option value="MARCA D'ÁGUA">MARCA D'ÁGUA</option>
+                                <option value="MARCA EXTRATOR">MARCA EXTRATOR</option>
+                                <option value="RISCOS">RISCOS</option>
+                                <option value="SUJIDADE">SUJIDADE</option>
+                            </optgroup>
+                            <optgroup label="QUALIDADE">
+                                <option value="INSPEÇÃO DE LINHA">INSPEÇÃO DE LINHA</option>
+                            </optgroup>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="manual-losses-obs" class="block text-sm font-medium text-gray-700 mb-2">Observações</label>
+                        <textarea id="manual-losses-obs" name="observations" rows="3" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" placeholder="Detalhes adicionais (opcional)"></textarea>
+                    </div>
+                    <div>
+                        <label for="manual-losses-photo" class="block text-sm font-medium text-gray-700 mb-2">Foto do problema (opcional)</label>
+                        <input type="file" id="manual-losses-photo" accept="image/*" capture="environment" class="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-600 hover:file:bg-orange-100">
+                        <p class="text-xs text-gray-500 mt-1">Anexe evidências para apoiar a investigação da perda.</p>
+                    </div>
+                    <div class="flex gap-3 pt-4">
+                        <button type="button" id="manual-losses-cancel" class="flex-1 py-3 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium">Cancelar</button>
+                        <button type="submit" class="flex-1 py-3 px-4 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium">Registrar Perda</button>
+                    </div>
+                </form>
+            </div>
+        </div>
 
     <!-- Modal de Lançamento Manual de Parada Passada -->
     <div id="manual-downtime-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
