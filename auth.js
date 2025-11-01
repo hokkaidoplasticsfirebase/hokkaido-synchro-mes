@@ -36,19 +36,25 @@ class AuthSystem {
         // Tentar carregar da localStorage primeiro (remember me)
         let userData = localStorage.getItem(this.sessionKey);
         
+        console.log('🔍 [DEBUG] loadUserSession - localStorage:', userData);
+        
         // Se não encontrou, tentar sessionStorage
         if (!userData) {
             userData = sessionStorage.getItem(this.sessionKey);
+            console.log('🔍 [DEBUG] loadUserSession - sessionStorage:', userData);
         }
         
         if (userData) {
             try {
                 this.currentUser = JSON.parse(userData);
+                console.log('✅ [DEBUG] Sessão carregada:', this.currentUser);
                 this.validateSession();
             } catch (error) {
                 console.error('Erro ao carregar sessão do usuário:', error);
                 this.logout();
             }
+        } else {
+            console.warn('⚠️ [DEBUG] Nenhuma sessão encontrada');
         }
     }
 
@@ -81,7 +87,15 @@ class AuthSystem {
     }
 
     getCurrentUser() {
+        console.log('🔍 [DEBUG] getCurrentUser() chamado:', this.currentUser);
         return this.currentUser;
+    }
+
+    setCurrentUser(user) {
+        if (user && typeof user === 'object') {
+            console.log('🔍 [DEBUG] setCurrentUser() atualizado:', user);
+            this.currentUser = user;
+        }
     }
 
     logout() {
@@ -103,13 +117,18 @@ class AuthSystem {
         if (!this.currentUser) return false;
         
         const tabPermissions = {
-            'planejamento': 'planejamento',
-            'lancamento': 'lancamento', 
-            'analise': 'analise'
+            planejamento: ['planejamento'],
+            ordens: ['planejamento', 'lancamento'],
+            lancamento: ['lancamento'],
+            analise: ['analise']
         };
         
-        const requiredPermission = tabPermissions[tabName];
-        return requiredPermission ? this.hasPermission(requiredPermission) : false;
+        const requiredPermissions = tabPermissions[tabName];
+        if (!requiredPermissions || requiredPermissions.length === 0) {
+            return false;
+        }
+        
+        return requiredPermissions.some(permission => this.hasPermission(permission));
     }
 
     // Filtrar abas baseado nas permissões do usuário
@@ -129,6 +148,8 @@ class AuthSystem {
                     btn.classList.remove('active');
                     this.setDefaultActiveTab();
                 }
+            } else {
+                btn.style.display = '';
             }
         });
     }
@@ -246,14 +267,27 @@ class AuthSystem {
             'create_planning': 'planejamento',
             'edit_planning': 'planejamento',
             'delete_planning': 'planejamento',
+            'create_production_order': 'planejamento',
             'add_production': 'lancamento',
             'add_losses': 'lancamento',
             'add_downtime': 'lancamento',
+            'add_rework': 'lancamento',
             'view_analysis': 'analise',
-            'export_data': 'analise'
+            'export_data': 'analise',
+            'close_production_order': 'mixed'
         };
         
         const requiredPermission = actionPermissions[action];
+        
+        if (action === 'close_production_order') {
+            const userPerms = this.currentUser?.permissions || [];
+            const canClose = userPerms.includes('planejamento') || userPerms.includes('lancamento');
+            if (!canClose) {
+                this.showPermissionError();
+                return false;
+            }
+            return true;
+        }
         
         if (!this.hasPermission(requiredPermission)) {
             this.showPermissionError();
