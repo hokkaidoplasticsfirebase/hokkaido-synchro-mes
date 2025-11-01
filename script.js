@@ -2,6 +2,12 @@
 // All functionalities, including the new database with product codes, are implemented here.
 
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('🔍 [DEBUG] script.js DOMContentLoaded iniciado');
+    console.log('🔍 [DEBUG] window.authSystem disponível?', window.authSystem);
+    if (window.authSystem) {
+        console.log('🔍 [DEBUG] currentUser:', window.authSystem.getCurrentUser?.());
+    }
+    
     // Firebase Configuration
     if (typeof firebase === 'undefined' || typeof firebase.firestore === 'undefined') {
         alert("Erro Crítico: A biblioteca da base de dados não conseguiu ser carregada.");
@@ -82,6 +88,37 @@ document.addEventListener('DOMContentLoaded', function() {
         "H-01", "H-02", "H-03", "H-04", "H-05", "H-06", "H-07", "H-08", "H-09", "H-10",
         "H-11", "H-12", "H-13", "H-14", "H-15", "H-16", "H-17", "H-18", "H-19", "H-20",
         "H-26", "H-27", "H-28", "H-29", "H-30", "H-31", "H-32"
+    ];
+
+    // Base de dados de máquinas com seus modelos
+    const machineDatabase = [
+        { id: "H-01", model: "SANDRETTO OTTO" },
+        { id: "H-02", model: "SANDRETTO SERIE 200" },
+        { id: "H-03", model: "LS LTE280" },
+        { id: "H-04", model: "LS LTE 330" },
+        { id: "H-05", model: "LS LTE 170" },
+        { id: "H-06", model: "HAITIAN MA2000" },
+        { id: "H-07", model: "CHEN HSONG JM 178 A" },
+        { id: "H-08", model: "REED 200 TG II" },
+        { id: "H-09", model: "REED 200 TG II" },
+        { id: "H-10", model: "HAITIAN MA 3200" },
+        { id: "H-11", model: "ROMI 300 TGR" },
+        { id: "H-12", model: "BORCHE BH 120" },
+        { id: "H-13", model: "HAITIAN MA 2000 770G" },
+        { id: "H-14", model: "SANDRETTO SB UNO" },
+        { id: "H-15", model: "ROMI EN 260 CM 10" },
+        { id: "H-16", model: "HAITIAN MA 2000 III" },
+        { id: "H-17", model: "ROMI EN 260 CM 10" },
+        { id: "H-18", model: "HAITIAN MA 2000 III" },
+        { id: "H-19", model: "HAITIAN MA 2000 III" },
+        { id: "H-20", model: "HAITIAN PL 200J" },
+        { id: "H-26", model: "ROMI PRIMAX CM9" },
+        { id: "H-27", model: "ROMI PRIMAX CM8" },
+        { id: "H-28", model: "ROMI PRIMAX CM8" },
+        { id: "H-29", model: "ROMI PRIMAX CM8" },
+        { id: "H-30", model: "ROMI PRIMAX CM8" },
+        { id: "H-31", model: "ROMI PRÁTICA CM8" },
+        { id: "H-32", model: "ROMI PRÁTICA CM8" }
     ];
 
     // Motivos de Refugo (conforme Excel - Grupos P, F, Q)
@@ -197,6 +234,12 @@ document.addEventListener('DOMContentLoaded', function() {
     let machines = [];
     let currentAnalysisFilters = {};
 
+    let productionOrdersUnsubscribe = null;
+    let productionOrdersCache = [];
+    let currentSelectedOrderForAnalysis = null;
+    let currentActiveOrder = null;
+    let currentOrderProgress = { executed: 0, planned: 0, expected: 0 };
+
     // DOM Element Selectors
     const navButtons = document.querySelectorAll('.nav-btn');
     const pageContents = document.querySelectorAll('.page-content');
@@ -210,6 +253,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const planningDateSelector = document.getElementById('planning-date-selector');
     const planningForm = document.getElementById('planning-form');
+    const planningOrderSelect = document.getElementById('planning-order-select');
+    const planningOrderInfo = document.getElementById('planning-order-info');
     const planningTableBody = document.getElementById('planning-table-body');
     const planningMachineSelect = document.getElementById('planning-machine');
     const planningMpInput = document.getElementById('planning-mp');
@@ -235,6 +280,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const machineName = document.getElementById('machine-name');
     const productName = document.getElementById('product-name');
     const productMp = document.getElementById('product-mp');
+    const finalizeOrderBtn = document.getElementById('finalize-order-btn');
     const shiftTarget = document.getElementById('shift-target');
     const productionTimeDisplay = document.getElementById('production-time');
     const producedToday = document.getElementById('produced-today');
@@ -245,6 +291,18 @@ document.addEventListener('DOMContentLoaded', function() {
     const recentEntriesLoading = document.getElementById('recent-entries-loading');
     const recentEntriesEmpty = document.getElementById('recent-entries-empty');
     const refreshRecentEntriesBtn = document.getElementById('refresh-recent-entries');
+
+    // Elementos da aba de Ordens de Produção
+    const productionOrderForm = document.getElementById('production-order-form');
+    const productionOrderStatusMessage = document.getElementById('production-order-status-message');
+    const productionOrderTableBody = document.getElementById('production-order-table-body');
+    const productionOrderEmptyState = document.getElementById('production-order-empty');
+    const productionOrderCodeInput = document.getElementById('order-part-code');
+    const productionOrderCodeDatalist = document.getElementById('order-product-code-list');
+    const productionOrderFeedback = document.getElementById('order-product-feedback');
+    const productionOrderProductInput = document.getElementById('order-product');
+    const productionOrderCustomerInput = document.getElementById('order-customer');
+    const productionOrderRawMaterialInput = document.getElementById('order-raw-material');
 
     updateRecentEntriesEmptyMessage('Selecione uma máquina para visualizar os lançamentos.');
     setRecentEntriesState({ loading: false, empty: true });
@@ -265,6 +323,79 @@ document.addEventListener('DOMContentLoaded', function() {
     const graphMachineFilter = document.getElementById('graph-machine-filter');
 
     // --- FUNÇÕES UTILITÁRIAS ---
+    
+    // Recupera sessão diretamente do armazenamento (sessionStorage > localStorage)
+    function getStoredUserSession() {
+        const storageSources = [() => sessionStorage, () => localStorage];
+        for (const getStorage of storageSources) {
+            try {
+                const storage = getStorage();
+                if (!storage) continue;
+                const data = storage.getItem('synchro_user');
+                if (data) {
+                    const parsed = JSON.parse(data);
+                    console.log('🔍 [DEBUG] getStoredUserSession() encontrou:', parsed);
+                    return parsed;
+                }
+            } catch (error) {
+                console.warn('⚠️ [DEBUG] Erro ao ler sessão armazenada:', error);
+            }
+        }
+        console.warn('⚠️ [DEBUG] getStoredUserSession() não encontrou dados');
+        return null;
+    }
+
+    // Obtém usuário ativo com fallback para sessão armazenada
+    function getActiveUser() {
+        const authUser = window.authSystem?.getCurrentUser?.();
+        if (authUser && (authUser.username || authUser.name)) {
+            return authUser;
+        }
+
+        const storedUser = getStoredUserSession();
+        if (storedUser) {
+            if (window.authSystem?.setCurrentUser) {
+                window.authSystem.setCurrentUser(storedUser);
+            } else if (window.authSystem) {
+                window.authSystem.currentUser = storedUser;
+            }
+            return storedUser;
+        }
+
+        return {};
+    }
+
+    // Função para obter o nome do usuário com fallback seguro
+    function getCurrentUserName() {
+        const currentUser = getActiveUser();
+        
+        console.log('🔍 [DEBUG] getCurrentUserName() - currentUser:', currentUser);
+        
+        // Tentar obter o nome do usuário atual
+        if (currentUser.name && currentUser.name.trim()) {
+            console.log('✅ [DEBUG] Nome obtido da sessão:', currentUser.name);
+            return currentUser.name;
+        }
+        
+        // Fallback: tentar extrair do username
+        if (currentUser.username) {
+            // Se o username tem ponto, dividir e pegar a primeira palavra capitalizada
+            if (currentUser.username.includes('.')) {
+                const parts = currentUser.username.split('.');
+                const resultado = parts.map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+                console.log('✅ [DEBUG] Nome extraído do username:', resultado);
+                return resultado;
+            }
+            // Caso contrário, retornar capitalizado
+            const resultado = currentUser.username.charAt(0).toUpperCase() + currentUser.username.slice(1);
+            console.log('✅ [DEBUG] Username capitalizado:', resultado);
+            return resultado;
+        }
+        
+        console.warn('⚠️ [DEBUG] Nenhum nome encontrado, retornando "Desconhecido"');
+        // Último recurso
+        return 'Desconhecido';
+    }
     
     // Funções para normalizar datas conforme o ciclo de trabalho (7h a 7h do dia seguinte)
     // Turno 1: 07:00 - 15:00 | Turno 2: 15:00 - 23:00 | Turno 3: 23:00 - 07:00
@@ -623,7 +754,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 loadResumoData();
             }
 
-            if (collectionToDelete === 'production_entries' || collectionToDelete === 'downtime_entries') {
+            if (collectionToDelete === 'production_entries' || collectionToDelete === 'downtime_entries' || collectionToDelete === 'rework_entries') {
                 recentEntriesCache.delete(docIdToDelete);
                 await loadRecentEntries(false);
             }
@@ -856,6 +987,7 @@ document.addEventListener('DOMContentLoaded', function() {
             setTodayDate();
             setupEventListeners();
             setupPlanningTab();
+            setupProductionOrdersTab();
             setupLaunchTab();
             setupAnalysisTab();
             populateLossOptions();
@@ -967,84 +1099,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Função para configurar a aba de lançamento
-    function setupLaunchTab() {
-        console.log('🔧 Configurando aba de lançamento...');
-        
-        if (machineCardGrid && !machineCardGrid.dataset.listenerAttached) {
-            machineCardGrid.addEventListener('click', async (event) => {
-                const card = event.target.closest('.machine-card');
-                if (!card) return;
-                const machine = card.dataset.machine;
-                if (!machine) return;
-                await onMachineSelected(machine);
-            });
-            machineCardGrid.dataset.listenerAttached = 'true';
-        }
-        
-        // Event listeners para os botões de ação
-        const btnLosses = document.getElementById('btn-losses');
-        const btnDowntime = document.getElementById('btn-downtime');
-        
-        console.log('Botões encontrados:', {
-            losses: !!btnLosses,
-            downtime: !!btnDowntime
-        });
-        
-        if (btnLosses) btnLosses.addEventListener('click', openLossesModal);
-        if (btnDowntime) btnDowntime.addEventListener('click', toggleDowntime);
-        
-        // Event listeners para os modais
-        const quickProductionForm = document.getElementById('quick-production-form');
-        const quickProductionClose = document.getElementById('quick-production-close');
-        const quickProductionCancel = document.getElementById('quick-production-cancel');
-        
-        const quickLossesForm = document.getElementById('quick-losses-form');
-        const quickLossesClose = document.getElementById('quick-losses-close');
-        const quickLossesCancel = document.getElementById('quick-losses-cancel');
-        
-        const quickDowntimeForm = document.getElementById('quick-downtime-form');
-        const quickDowntimeClose = document.getElementById('quick-downtime-close');
-        const quickDowntimeCancel = document.getElementById('quick-downtime-cancel');
-        
-        console.log('Formulários encontrados:', {
-            productionForm: !!quickProductionForm,
-            lossesForm: !!quickLossesForm,
-            downtimeForm: !!quickDowntimeForm
-        });
-        
-        if (quickProductionForm) {
-            quickProductionForm.addEventListener('submit', handleProductionSubmit);
-            console.log('✅ Event listener do formulário de produção configurado');
-        } else {
-            console.log('❌ Formulário de produção não encontrado');
-        }
-        
-        if (quickProductionClose) quickProductionClose.addEventListener('click', () => closeModal('quick-production-modal'));
-        if (quickProductionCancel) quickProductionCancel.addEventListener('click', () => closeModal('quick-production-modal'));
-        
-        if (quickLossesForm) {
-            quickLossesForm.addEventListener('submit', handleLossesSubmit);
-            console.log('✅ Event listener do formulário de perdas configurado');
-        } else {
-            console.log('❌ Formulário de perdas não encontrado');
-        }
-        
-        if (quickLossesClose) quickLossesClose.addEventListener('click', () => closeModal('quick-losses-modal'));
-        if (quickLossesCancel) quickLossesCancel.addEventListener('click', () => closeModal('quick-losses-modal'));
-        
-        if (quickDowntimeForm) {
-            quickDowntimeForm.addEventListener('submit', handleDowntimeSubmit);
-            console.log('✅ Event listener do formulário de paradas configurado');
-        } else {
-            console.log('❌ Formulário de paradas não encontrado');
-        }
-        
-        if (quickDowntimeClose) quickDowntimeClose.addEventListener('click', () => closeModal('quick-downtime-modal'));
-        if (quickDowntimeCancel) quickDowntimeCancel.addEventListener('click', () => closeModal('quick-downtime-modal'));
-        
-        console.log('✅ Aba de lançamento configurada');
-    }
-
     // Configuração da aba de análise avançada
     function setupAnalysisTab() {
         console.log('🔧 Configurando aba de análise...');
@@ -1248,6 +1302,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 case 'comparative':
                     await loadComparativeAnalysis();
                     break;
+                case 'orders':
+                    await loadOrdersAnalysis();
+                    break;
             }
         } catch (error) {
             console.error('Erro ao carregar dados de análise:', error);
@@ -1256,6 +1313,273 @@ document.addEventListener('DOMContentLoaded', function() {
             showAnalysisLoading(false);
             console.log('[TRACE][loadAnalysisData] end', { viewName });
         }
+    }
+
+    function populateOrdersMachineFilter(orders) {
+        const machineFilter = document.getElementById('orders-machine-filter');
+        if (!machineFilter) return;
+
+        // Coletar máquinas únicas das ordens
+        const uniqueMachines = new Set();
+        orders.forEach(order => {
+            if (order.machine_id) {
+                uniqueMachines.add(order.machine_id);
+            }
+        });
+
+        // Preservar valor atual
+        const currentValue = machineFilter.value;
+
+        // Recriar opções
+        machineFilter.innerHTML = '<option value="">Todas as Máquinas</option>';
+        
+        // Adicionar máquinas em ordem alfabética
+        Array.from(uniqueMachines).sort().forEach(machineId => {
+            const option = document.createElement('option');
+            option.value = machineId;
+            option.textContent = machineId;
+            machineFilter.appendChild(option);
+        });
+
+        // Restaurar valor anterior
+        machineFilter.value = currentValue;
+    }
+
+    async function loadOrdersAnalysis() {
+        console.log('📋 Carregando análise de ordens de produção', {
+            cacheLength: productionOrdersCache?.length || 0,
+            cache: productionOrdersCache
+        });
+
+        let ordersDataset = Array.isArray(productionOrdersCache) ? [...productionOrdersCache] : [];
+
+        if (ordersDataset.length === 0) {
+            try {
+                const snapshot = await db.collection('production_orders').orderBy('createdAt', 'desc').get();
+                ordersDataset = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                productionOrdersCache = ordersDataset;
+            } catch (error) {
+                console.error('Erro ao recuperar ordens de produção para análise:', error);
+            }
+        }
+
+        if (!ordersDataset || ordersDataset.length === 0) {
+            console.warn('❌ Nenhuma ordem de produção encontrada.');
+            showAnalysisNoData('Nenhuma ordem de produção cadastrada.');
+            return;
+        }
+
+        const ordersGrid = document.getElementById('orders-grid');
+        if (!ordersGrid) {
+            console.error('❌ Elemento orders-grid não encontrado no DOM');
+            return;
+        }
+
+        const startDateStr = currentAnalysisFilters.startDate;
+        const endDateStr = currentAnalysisFilters.endDate;
+
+        const normalizedOrders = ordersDataset.map(order => ({
+            ...order,
+            normalizedCode: String(order.part_code || order.product_cod || '').trim()
+        }));
+
+        // Mapear produção por ID de ordem (só conta produção para ordens ativas)
+        const productionTotalsByOrderId = new Map();
+
+        try {
+            const productionSnapshot = await db.collection('production_entries')
+                .where('data', '>=', startDateStr)
+                .where('data', '<=', endDateStr)
+                .get();
+
+            productionSnapshot.docs.forEach(doc => {
+                const data = doc.data();
+                const orderId = data.order_id || data.orderId;
+                
+                if (!orderId) return;
+
+                const producedQty = Number(data.produzido || data.quantity || 0);
+                if (!Number.isFinite(producedQty) || producedQty <= 0) {
+                    return;
+                }
+
+                productionTotalsByOrderId.set(
+                    orderId,
+                    (productionTotalsByOrderId.get(orderId) || 0) + producedQty
+                );
+            });
+        } catch (error) {
+            console.error('Erro ao carregar lançamentos para análise de ordens:', error);
+        }
+
+        // Preencher dropdown de máquinas com máquinas usadas nas ordens
+        populateOrdersMachineFilter(normalizedOrders);
+
+        const ordersWithProgress = normalizedOrders
+            .map(order => {
+                const lotSize = Number(order.lot_size) || 0;
+                // Buscar produção por ID da ordem (não por part_code)
+                const totalProduced = productionTotalsByOrderId.get(order.id) || 0;
+                const progress = lotSize > 0 ? Math.min((totalProduced / lotSize) * 100, 100) : 0;
+                const remaining = Math.max(0, lotSize - totalProduced);
+                const status = (order.status || '').toLowerCase();
+
+                return {
+                    ...order,
+                    totalProduced,
+                    progress,
+                    remaining,
+                    isComplete: lotSize > 0 ? totalProduced >= lotSize : ['concluida'].includes(status),
+                    hasProduction: totalProduced > 0
+                };
+            });
+
+        // Aplicar filtros de status e pesquisa
+        const ordersStatusFilter = document.getElementById('orders-status-filter')?.value || '';
+        const ordersMachineFilter = document.getElementById('orders-machine-filter')?.value || '';
+        const ordersSearchQuery = document.getElementById('orders-search')?.value.toLowerCase() || '';
+
+        let filteredOrders = ordersWithProgress;
+
+        // Filtro por status
+        if (ordersStatusFilter) {
+            filteredOrders = filteredOrders.filter(order => {
+                const status = (order.status || '').toLowerCase();
+                if (ordersStatusFilter === 'planejada') return status === 'planejada';
+                if (ordersStatusFilter === 'em_andamento') return status === 'em_andamento';
+                if (ordersStatusFilter === 'concluida') return status === 'concluida';
+                if (ordersStatusFilter === 'cancelada') return status === 'cancelada';
+                return true;
+            });
+        }
+
+        // Filtro por máquina
+        if (ordersMachineFilter) {
+            filteredOrders = filteredOrders.filter(order => {
+                return order.machine_id === ordersMachineFilter;
+            });
+        }
+
+        if (ordersSearchQuery) {
+            filteredOrders = filteredOrders.filter(order => 
+                (order.order_number || '').toLowerCase().includes(ordersSearchQuery) ||
+                (order.product || '').toLowerCase().includes(ordersSearchQuery) ||
+                (order.part_code || '').toLowerCase().includes(ordersSearchQuery)
+            );
+        }
+
+        const ordersHtml = filteredOrders.map(order => {
+            const progressColor = order.progress >= 100 ? 'bg-emerald-500' : order.progress >= 50 ? 'bg-amber-500' : 'bg-red-500';
+            const lotSizeNumeric = Number(order.lot_size) || 0;
+            const status = (order.status || '').toLowerCase();
+
+            // Mapa de cores para status
+            const statusColorMap = {
+                'planejada': { badge: 'bg-sky-100 text-sky-700', label: 'Planejada' },
+                'em_andamento': { badge: 'bg-amber-100 text-amber-700', label: 'Em andamento' },
+                'concluida': { badge: 'bg-emerald-100 text-emerald-700', label: 'Concluída' },
+                'cancelada': { badge: 'bg-red-100 text-red-700', label: 'Cancelada' }
+            };
+
+            const statusDisplay = statusColorMap[status] || statusColorMap['planejada'];
+
+            // Buscar modelo da máquina
+            const machineInfo = machineDatabase.find(m => m.id === order.machine_id);
+            const machineDisplay = machineInfo 
+                ? `<br><strong>Máquina:</strong> ${escapeHtml(order.machine_id)} - ${escapeHtml(machineInfo.model)}`
+                : '';
+
+            return `
+                <div class="bg-white p-6 rounded-lg shadow border-l-4 border-primary-blue">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="flex-1">
+                            <h3 class="text-lg font-bold text-gray-800">${escapeHtml(order.order_number)}</h3>
+                            <p class="text-sm text-gray-600 mt-1">
+                                <strong>Produto:</strong> ${escapeHtml(order.product || 'N/A')} 
+                                <br><strong>Cliente:</strong> ${escapeHtml(order.customer || 'N/A')}
+                                <br><strong>Código:</strong> ${escapeHtml(order.part_code || 'N/A')}
+                                ${machineDisplay}
+                            </p>
+                        </div>
+                        <span class="px-3 py-1 rounded-full text-xs font-semibold ${statusDisplay.badge}">
+                            ${statusDisplay.label}
+                        </span>
+                    </div>
+
+                    <div class="mt-4 space-y-3">
+                        <div>
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="text-sm font-medium text-gray-700">Progresso do Lote</span>
+                                <span class="text-sm font-bold text-gray-800">${order.totalProduced.toLocaleString('pt-BR')} / ${lotSizeNumeric.toLocaleString('pt-BR')} un</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                <div class="${progressColor} h-2.5 rounded-full transition-all duration-500" style="width: ${order.progress}%"></div>
+                            </div>
+                            <div class="mt-1 text-xs text-gray-500">
+                                Faltam: <strong>${order.remaining.toLocaleString('pt-BR')} un</strong>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-gray-50 p-3 rounded">
+                                <div class="text-xs text-gray-600">Tamanho do Lote</div>
+                                <div class="text-lg font-bold text-gray-800">${lotSizeNumeric.toLocaleString('pt-BR')}</div>
+                            </div>
+                            <div class="bg-gray-50 p-3 rounded">
+                                <div class="text-xs text-gray-600">Produzido até agora</div>
+                                <div class="text-lg font-bold text-emerald-600">${order.totalProduced.toLocaleString('pt-BR')}</div>
+                            </div>
+                        </div>
+
+                        ${order.raw_material ? `<div class="bg-blue-50 p-2 rounded text-xs"><strong>MP:</strong> ${escapeHtml(order.raw_material)}</div>` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        if (filteredOrders.length === 0) {
+            ordersGrid.innerHTML = `
+                <div class="col-span-full text-center py-12">
+                    <i data-lucide="inbox" class="w-12 h-12 text-gray-400 mx-auto mb-3"></i>
+                    <p class="text-gray-600">Nenhuma ordem encontrada com os filtros selecionados</p>
+                </div>
+            `;
+        } else {
+            ordersGrid.innerHTML = ordersHtml;
+        }
+
+        try {
+            lucide.createIcons();
+        } catch (iconError) {
+            console.warn('Falha ao renderizar ícones lucide na aba de ordens:', iconError);
+        }
+
+        const noDataContainer = document.getElementById('analysis-no-data');
+        if (filteredOrders.length > 0 && noDataContainer) {
+            noDataContainer.classList.add('hidden');
+        }
+
+        // Configurar event listeners para filtros
+        const ordersStatusFilterBtn = document.getElementById('orders-status-filter');
+        const ordersMachineFilterBtn = document.getElementById('orders-machine-filter');
+        const ordersSearchInput = document.getElementById('orders-search');
+        
+        if (ordersStatusFilterBtn && !ordersStatusFilterBtn.dataset.listenerAttached) {
+            ordersStatusFilterBtn.addEventListener('change', () => loadOrdersAnalysis());
+            ordersStatusFilterBtn.dataset.listenerAttached = 'true';
+        }
+
+        if (ordersMachineFilterBtn && !ordersMachineFilterBtn.dataset.listenerAttached) {
+            ordersMachineFilterBtn.addEventListener('change', () => loadOrdersAnalysis());
+            ordersMachineFilterBtn.dataset.listenerAttached = 'true';
+        }
+        
+        if (ordersSearchInput && !ordersSearchInput.dataset.listenerAttached) {
+            ordersSearchInput.addEventListener('input', () => loadOrdersAnalysis());
+            ordersSearchInput.dataset.listenerAttached = 'true';
+        }
+
+        lucide.createIcons();
     }
 
     // Função para carregar visão geral
@@ -1349,6 +1673,14 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function aggregateOeeMetrics(productionData, lossesData, downtimeData, planData, shiftFilter = 'all') {
+        console.log('[TRACE][aggregateOeeMetrics] iniciando com', {
+            production: productionData.length,
+            losses: lossesData.length,
+            downtime: downtimeData.length,
+            plan: planData.length,
+            shiftFilter
+        });
+
         const toShiftNumber = (value) => {
             if (value === null || value === undefined) return null;
             const num = Number(value);
@@ -1422,23 +1754,33 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (shiftNum) return shiftNum;
             }
 
-            return null;
+            // CORREÇÃO: Se não conseguir inferir o turno, assume turno 1 (padrão) para evitar descarte
+            console.log('[TRACE][aggregateOeeMetrics] turno não identificado para item', item.id || 'sem-id', 'assumindo turno 1');
+            return 1;
         };
 
         const inferMachine = (item) => item.machine || item?.raw?.machine || item?.raw?.machineRef || item?.raw?.machine_id || null;
 
-        const groupKey = (machine, shift) => `${machine || 'unknown'}_${shift ?? 'none'}`;
+        // CORREÇÃO: Incluir workDay/date no agrupamento para múltiplas datas
+        const groupKey = (machine, shift, workDay) => `${machine || 'unknown'}_${shift ?? 'none'}_${workDay || 'nodate'}`;
         const grouped = {};
 
         const getOrCreateGroup = (item) => {
             const machine = inferMachine(item);
             const shiftNum = inferShift(item);
-            if (!machine || !shiftNum) return null;
-            const key = groupKey(machine, shiftNum);
+            const workDay = item.workDay || item.date || 'nodate';
+            
+            if (!machine) {
+                console.log('[TRACE][aggregateOeeMetrics] máquina não identificada para item', item.id || 'sem-id');
+                return null;
+            }
+            
+            const key = groupKey(machine, shiftNum, workDay);
             if (!grouped[key]) {
                 grouped[key] = {
                     machine,
                     shift: shiftNum,
+                    workDay,
                     production: 0,
                     lossesKg: 0,
                     downtimeMin: 0
@@ -1468,21 +1810,56 @@ document.addEventListener('DOMContentLoaded', function() {
         const clamp01 = (value) => Math.max(0, Math.min(1, value));
         const groupsWithMetrics = [];
 
-        Object.values(grouped).forEach(group => {
-            const planCandidates = planData.filter(p => p && p.raw && p.machine === group.machine);
-            if (!planCandidates.length) return;
+        console.log('[TRACE][aggregateOeeMetrics] grupos criados:', Object.keys(grouped).length);
 
-            const plan = planCandidates.find(p => {
+        Object.values(grouped).forEach(group => {
+            // CORREÇÃO: Buscar planos por máquina e data também
+            const planCandidates = planData.filter(p => p && p.raw && p.machine === group.machine);
+            
+            if (!planCandidates.length) {
+                console.log('[TRACE][aggregateOeeMetrics] sem plano para máquina', group.machine, 'usando valores padrão');
+                // CORREÇÃO: Usar valores padrão quando não há plano disponível
+                const metrics = calculateShiftOEE(
+                    group.production,
+                    group.downtimeMin,
+                    0, // refugoPcs
+                    30, // ciclo padrão de 30 segundos
+                    2   // 2 cavidades padrão
+                );
+
+                groupsWithMetrics.push({
+                    machine: group.machine,
+                    shift: group.shift,
+                    workDay: group.workDay,
+                    disponibilidade: clamp01(metrics.disponibilidade),
+                    performance: clamp01(metrics.performance),
+                    qualidade: clamp01(metrics.qualidade),
+                    oee: clamp01(metrics.oee)
+                });
+                return;
+            }
+
+            // Tentar encontrar plano específico para o turno
+            let plan = planCandidates.find(p => {
                 const planShift = Number(p.shift || 0);
                 return planShift && planShift === group.shift;
-            }) || planCandidates[0];
+            });
 
-            if (!plan || !plan.raw) return;
+            // Se não encontrou plano específico, usar o primeiro disponível
+            if (!plan) {
+                plan = planCandidates[0];
+                console.log('[TRACE][aggregateOeeMetrics] usando plano genérico para máquina', group.machine, 'turno', group.shift);
+            }
+
+            if (!plan || !plan.raw) {
+                console.log('[TRACE][aggregateOeeMetrics] plano inválido para máquina', group.machine);
+                return;
+            }
 
             const shiftKey = `t${group.shift}`;
-            const cicloReal = plan.raw[`real_cycle_${shiftKey}`] || plan.raw.budgeted_cycle || 0;
-            const cavAtivas = plan.raw[`active_cavities_${shiftKey}`] || plan.raw.mold_cavities || 0;
-            const pieceWeight = plan.raw.piece_weight || 0;
+            const cicloReal = plan.raw[`real_cycle_${shiftKey}`] || plan.raw.budgeted_cycle || 30;
+            const cavAtivas = plan.raw[`active_cavities_${shiftKey}`] || plan.raw.mold_cavities || 2;
+            const pieceWeight = plan.raw.piece_weight || 0.1; // peso padrão de 100g
 
             const refugoPcs = pieceWeight > 0 ? Math.round((group.lossesKg * 1000) / pieceWeight) : 0;
 
@@ -1494,9 +1871,22 @@ document.addEventListener('DOMContentLoaded', function() {
                 cavAtivas
             );
 
+            console.log('[TRACE][aggregateOeeMetrics] grupo processado:', {
+                machine: group.machine,
+                shift: group.shift,
+                workDay: group.workDay,
+                production: group.production,
+                downtimeMin: group.downtimeMin,
+                refugoPcs,
+                cicloReal,
+                cavAtivas,
+                metrics
+            });
+
             groupsWithMetrics.push({
                 machine: group.machine,
                 shift: group.shift,
+                workDay: group.workDay,
                 disponibilidade: clamp01(metrics.disponibilidade),
                 performance: clamp01(metrics.performance),
                 qualidade: clamp01(metrics.qualidade),
@@ -1515,6 +1905,9 @@ document.addEventListener('DOMContentLoaded', function() {
             ? groupsWithMetrics
             : groupsWithMetrics.filter(item => item.shift === normalizedShift);
 
+        console.log('[TRACE][aggregateOeeMetrics] grupos com métricas:', groupsWithMetrics.length);
+        console.log('[TRACE][aggregateOeeMetrics] grupos filtrados:', filteredGroups.length);
+
         const overall = {
             disponibilidade: averageMetric(groupsWithMetrics, item => item.disponibilidade),
             performance: averageMetric(groupsWithMetrics, item => item.performance),
@@ -1528,6 +1921,13 @@ document.addEventListener('DOMContentLoaded', function() {
             qualidade: averageMetric(filteredGroups, item => item.qualidade),
             oee: averageMetric(filteredGroups, item => item.oee)
         };
+
+        console.log('[TRACE][aggregateOeeMetrics] resultado final:', {
+            overall,
+            filtered,
+            shiftFilter,
+            normalizedShift
+        });
 
         return {
             overall,
@@ -1743,6 +2143,45 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Função para debug de eficiência
+    async function debugEfficiencyCalculation() {
+        const { startDate, endDate, machine, shift } = currentAnalysisFilters;
+        console.log('=== DEBUG EFICIÊNCIA ===');
+        console.log('Filtros:', { startDate, endDate, machine, shift });
+        
+        // Buscar dados raw
+        const [productionData, lossesData, downtimeData, planData] = await Promise.all([
+            getFilteredData('production', startDate, endDate, machine, 'all'),
+            getFilteredData('losses', startDate, endDate, machine, 'all'),
+            getFilteredData('downtime', startDate, endDate, machine, 'all'),
+            getFilteredData('plan', startDate, endDate, machine, 'all')
+        ]);
+
+        console.log('Dados Raw:', {
+            production: productionData.length,
+            losses: lossesData.length,
+            downtime: downtimeData.length,
+            plan: planData.length
+        });
+
+        console.log('Amostra Production:', productionData.slice(0, 3));
+        console.log('Amostra Plan:', planData.slice(0, 3));
+
+        const result = aggregateOeeMetrics(productionData, lossesData, downtimeData, planData, shift);
+        console.log('Resultado Agregação:', result);
+
+        alert(`Debug concluído! Verifique o console para detalhes.
+        
+Production: ${productionData.length} registros
+Losses: ${lossesData.length} registros  
+Downtime: ${downtimeData.length} registros
+Plan: ${planData.length} registros
+
+Disponibilidade: ${(result.filtered.disponibilidade * 100).toFixed(1)}%
+Performance: ${(result.filtered.performance * 100).toFixed(1)}%
+Qualidade: ${(result.filtered.qualidade * 100).toFixed(1)}%`);
+    }
+
     // Função para carregar análise de eficiência
     async function loadEfficiencyAnalysis() {
         const { startDate, endDate, machine, shift } = currentAnalysisFilters;
@@ -1792,6 +2231,20 @@ document.addEventListener('DOMContentLoaded', function() {
             reasonCounts[a] > reasonCounts[b] ? a : b, '---'
         );
         
+        // Separar dados de borra
+        const borraData = lossesData.filter(item => 
+            item.reason && item.reason.toLowerCase().includes('borra') ||
+            (item.raw && item.raw.tipo_lancamento === 'borra')
+        );
+        const regularLossesData = lossesData.filter(item => !borraData.includes(item));
+        
+        // Calcular total de borra em kg
+        const totalBorraKg = borraData.reduce((sum, item) => {
+            // Para borra, usar preferencialmente o peso em kg
+            const weight = item.raw?.refugo_kg || item.quantity || 0;
+            return sum + weight;
+        }, 0);
+
         // Calcular MP mais perdida
         const materialCounts = {};
         lossesData.forEach(item => {
@@ -1804,17 +2257,59 @@ document.addEventListener('DOMContentLoaded', function() {
             ) 
             : '---';
 
+        // Análise específica de borra
+        const borraMPCounts = {};
+        const borraReasonCounts = {};
+        const borraMachineCounts = {};
+        
+        borraData.forEach(item => {
+            const mpType = item.mp_type || item.raw?.mp_type || 'Não especificado';
+            const reason = item.reason || item.raw?.perdas || 'Não especificado';
+            const machine = item.machine || 'Não especificado';
+            
+            borraMPCounts[mpType] = (borraMPCounts[mpType] || 0) + (item.raw?.refugo_kg || item.quantity || 0);
+            borraReasonCounts[reason] = (borraReasonCounts[reason] || 0) + (item.raw?.refugo_kg || item.quantity || 0);
+            borraMachineCounts[machine] = (borraMachineCounts[machine] || 0) + (item.raw?.refugo_kg || item.quantity || 0);
+        });
+
+        const topBorraMP = Object.keys(borraMPCounts).length > 0
+            ? Object.keys(borraMPCounts).reduce((a, b) => borraMPCounts[a] > borraMPCounts[b] ? a : b, '---')
+            : '---';
+            
+        const topBorraReason = Object.keys(borraReasonCounts).length > 0
+            ? Object.keys(borraReasonCounts).reduce((a, b) => borraReasonCounts[a] > borraReasonCounts[b] ? a : b, '---')
+            : '---';
+            
+        const topBorraMachine = Object.keys(borraMachineCounts).length > 0
+            ? Object.keys(borraMachineCounts).reduce((a, b) => borraMachineCounts[a] > borraMachineCounts[b] ? a : b, '---')
+            : '---';
+
         // Atualizar interface
         document.getElementById('total-losses').textContent = totalLosses.toLocaleString();
         document.getElementById('losses-percentage').textContent = `${lossesPercentage.toFixed(1)}%`;
+        document.getElementById('total-borra').textContent = `${totalBorraKg.toFixed(1)}`;
         document.getElementById('main-loss-reason').textContent = mainReason;
         document.getElementById('main-loss-material').textContent = mainMaterial;
+        
+        // Atualizar dados específicos de borra
+        const topBorraMPElement = document.getElementById('top-borra-mp');
+        const topBorraReasonElement = document.getElementById('top-borra-reason');
+        const topBorraMachineElement = document.getElementById('top-borra-machine');
+        
+        if (topBorraMPElement) topBorraMPElement.textContent = topBorraMP;
+        if (topBorraReasonElement) topBorraReasonElement.textContent = topBorraReason.replace('BORRA - ', '');
+        if (topBorraMachineElement) topBorraMachineElement.textContent = topBorraMachine;
 
         // Gerar gráficos
         await generateLossesParetoChart(lossesData);
         await generateLossesByMachineChart(lossesData);
         await generateLossesByMaterialChart(lossesData);
         await generateLossesTrendChart(lossesData, startDate, endDate);
+        
+        // Gerar gráficos específicos de borra
+        await generateBorraByMPChart(borraData);
+        await generateBorraByReasonChart(borraData);
+        await generateBorraByMachineChart(borraData);
     }
 
     // Função para carregar análise de paradas
@@ -2234,6 +2729,26 @@ document.addEventListener('DOMContentLoaded', function() {
                         workDay: raw.date || '',
                         raw
                     })
+                },
+                rework: {
+                    collection: 'rework_entries',
+                    dateField: 'data',
+                    mapper: (id, raw) => {
+                        const dateValue = raw.data || '';
+                        const primaryTimestamp = raw.timestamp || raw.createdAt || raw.updatedAt;
+                        const workDay = getWorkDayFromTimestamp(primaryTimestamp) || dateValue;
+                        return {
+                            id,
+                            date: dateValue,
+                            machine: raw.machine || null,
+                            quantity: Number(raw.quantidade ?? raw.quantity ?? 0) || 0,
+                            shift: normalizeShift(raw.turno ?? raw.shift),
+                            reason: raw.motivo || raw.reason || '',
+                            mp: raw.mp || '',
+                            workDay: workDay || dateValue,
+                            raw
+                        };
+                    }
                 }
             };
 
@@ -2343,6 +2858,46 @@ document.addEventListener('DOMContentLoaded', function() {
         return new Date(year, (month || 1) - 1, day || 1, hour || 0, minute || 0, 0, 0);
     }
 
+    // Helpers para lidar com paradas multi-dia
+    function pad2(n) { return String(n).padStart(2, '0'); }
+    function formatDateYMD(d) {
+        return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    }
+    function formatTimeHM(d) { return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
+
+    function splitDowntimeIntoDailySegments(startDateStr, startTimeStr, endDateStr, endTimeStr) {
+        const segments = [];
+        const start = new Date(`${startDateStr}T${startTimeStr}:00`);
+        const end = new Date(`${endDateStr}T${endTimeStr}:00`);
+        if (!(start instanceof Date) || !(end instanceof Date) || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+            return segments;
+        }
+
+        let cursor = new Date(start);
+        while (true) {
+            const dayEnd = new Date(cursor);
+            dayEnd.setHours(23, 59, 0, 0); // usamos 23:59 para compatibilidade com inputs tipo time
+
+            const segmentEnd = (end <= dayEnd) ? end : dayEnd;
+            const durationMin = Math.max(1, Math.floor((segmentEnd.getTime() - cursor.getTime()) / 60000));
+
+            segments.push({
+                date: formatDateYMD(cursor),
+                startTime: formatTimeHM(cursor),
+                endTime: formatTimeHM(segmentEnd),
+                duration: durationMin
+            });
+
+            if (end <= dayEnd) break;
+            // avançar para próximo dia 00:00
+            const nextDay = new Date(cursor);
+            nextDay.setDate(nextDay.getDate() + 1);
+            nextDay.setHours(0, 0, 0, 0);
+            cursor = nextDay;
+        }
+        return segments;
+    }
+
     function calculateHoursInPeriod(startDate, endDate) {
         if (!startDate || !endDate) return 0;
 
@@ -2382,9 +2937,30 @@ document.addEventListener('DOMContentLoaded', function() {
         noData.classList.remove('hidden');
     }
 
+    function showAnalysisNoData(message = 'Nenhum dado disponível para os filtros selecionados.') {
+        const loading = document.getElementById('analysis-loading');
+        const noData = document.getElementById('analysis-no-data');
+
+        if (loading) {
+            loading.classList.add('hidden');
+        }
+
+        if (noData) {
+            noData.classList.remove('hidden');
+            const messageElement = noData.querySelector('[data-analysis-empty-message]') || noData.querySelector('p');
+            if (messageElement && message) {
+                messageElement.textContent = message;
+            }
+        }
+    }
+
     function loadAnalysisMachines() {
-        // Inicializar lista de máquinas com as máquinas disponíveis
-        machines = machineList.map(machineId => ({ id: machineId, name: machineId }));
+        // Inicializar lista de máquinas com os dados do banco de dados
+        machines = machineDatabase.map(machine => ({ 
+            id: machine.id, 
+            name: machine.id, 
+            model: machine.model 
+        }));
         
         // Carregar lista de máquinas para o filtro
         const machineSelector = document.getElementById('analysis-machine');
@@ -2393,9 +2969,33 @@ document.addEventListener('DOMContentLoaded', function() {
             machines.forEach(machine => {
                 const option = document.createElement('option');
                 option.value = machine.id;
-                option.textContent = machine.name;
+                option.textContent = `${machine.id} - ${machine.model}`;
                 machineSelector.appendChild(option);
             });
+        }
+
+        // Carregar lista de máquinas para o formulário de ordens
+        populateOrderMachineSelect();
+    }
+
+    function populateOrderMachineSelect() {
+        const orderMachineSelect = document.getElementById('order-machine');
+        if (orderMachineSelect) {
+            // Manter a opção vazia no início
+            const currentValue = orderMachineSelect.value;
+            orderMachineSelect.innerHTML = '<option value="">Selecione uma máquina</option>';
+            
+            machineDatabase.forEach(machine => {
+                const option = document.createElement('option');
+                option.value = machine.id;
+                option.textContent = `${machine.id} - ${machine.model}`;
+                orderMachineSelect.appendChild(option);
+            });
+
+            // Restaurar valor anterior se existisse
+            if (currentValue) {
+                orderMachineSelect.value = currentValue;
+            }
         }
     }
 
@@ -2618,6 +3218,17 @@ document.addEventListener('DOMContentLoaded', function() {
         const executedPercentage = planned > 0 ? Math.min((executed / planned) * 100, 100) : 0;
         const expectedPercentage = planned > 0 ? Math.min((expectedByNow / planned) * 100, 100) : 0;
         const palette = resolveProgressPalette(executedPercentage);
+        const lotCompleted = planned > 0 && executed >= planned;
+        const orderStatus = (currentActiveOrder && typeof currentActiveOrder.status === 'string')
+            ? currentActiveOrder.status.toLowerCase()
+            : '';
+        const orderEligibleForFinalize = lotCompleted && (!orderStatus || ['planejada', 'em_andamento'].includes(orderStatus)) && !!currentActiveOrder?.id;
+
+        currentOrderProgress = {
+            executed: Number.isFinite(executed) ? executed : 0,
+            planned: Number.isFinite(planned) ? planned : 0,
+            expected: Number.isFinite(expectedByNow) ? expectedByNow : 0
+        };
 
         // Animar barra de progresso
         setTimeout(() => {
@@ -2629,6 +3240,7 @@ document.addEventListener('DOMContentLoaded', function() {
         progressBar.style.background = `linear-gradient(90deg, ${palette.start}, ${palette.end})`;
         progressBar.style.boxShadow = `0 6px 18px ${hexWithAlpha(palette.end, 0.35)}`;
         targetIndicator.style.backgroundColor = palette.end;
+        progressBar.classList.toggle('timeline-complete', lotCompleted);
 
         // Atualizar textos
         if (percentageText) {
@@ -2640,11 +3252,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         if (executedText) {
-            executedText.textContent = `${executed.toLocaleString()} peças`;
+            executedText.textContent = `${executed.toLocaleString('pt-BR')} peças`;
         }
         
         if (plannedText) {
-            plannedText.textContent = `${planned.toLocaleString()} peças`;
+            plannedText.textContent = `${planned.toLocaleString('pt-BR')} un (Tamanho do Lote)`;
         }
 
         // Determinar status
@@ -2660,6 +3272,12 @@ document.addEventListener('DOMContentLoaded', function() {
             status = 'ahead';
             statusMessage = 'Adiantado';
             indicatorClass = 'bg-blue-500 animate-pulse';
+        }
+
+        if (lotCompleted) {
+            status = 'completed';
+            statusMessage = 'Lote concluído';
+            indicatorClass = 'bg-emerald-500 animate-pulse';
         }
 
         // Atualizar indicador de status
@@ -2688,6 +3306,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 minute: '2-digit' 
             })}`;
         }
+
+        if (finalizeOrderBtn) {
+            finalizeOrderBtn.classList.toggle('hidden', !orderEligibleForFinalize);
+            finalizeOrderBtn.disabled = !orderEligibleForFinalize;
+        }
     }
 
     // Função de debounce para otimizar redimensionamento
@@ -2705,9 +3328,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Função para lidar com redimensionamento da janela
     function handleWindowResize() {
-        // Obter todos os gráficos Chart.js existentes
-        Chart.instances.forEach(chart => {
-            if (chart && chart.resize) {
+        const chartInstances = [];
+
+        if (typeof Chart !== 'undefined' && Chart.instances) {
+            if (Array.isArray(Chart.instances)) {
+                chartInstances.push(...Chart.instances);
+            } else if (Chart.instances instanceof Map) {
+                chartInstances.push(...Chart.instances.values());
+            } else {
+                chartInstances.push(...Object.values(Chart.instances));
+            }
+        }
+
+        chartInstances.forEach(chart => {
+            if (chart && typeof chart.resize === 'function') {
                 chart.resize();
             }
         });
@@ -2720,7 +3354,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Só recarregar se for uma aba com gráficos e se houve mudança significativa no tamanho
             if (['analise', 'lancamento'].includes(activePage)) {
                 // Verificar se mudou entre breakpoints importantes (mobile/desktop)
-                const wasMobile = window.previousWidth < 768;
+                const wasMobile = typeof window.previousWidth === 'number' ? window.previousWidth < 768 : window.innerWidth < 768;
                 const isMobile = window.innerWidth < 768;
                 
                 if (wasMobile !== isMobile) {
@@ -3785,9 +4419,209 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Gerar gráfico de borra por MP
+    async function generateBorraByMPChart(borraData) {
+        const ctx = document.getElementById('borra-by-mp-chart');
+        if (!ctx) return;
+
+        destroyChart('borra-by-mp-chart');
+
+        if (borraData.length === 0) {
+            showNoDataMessage('borra-by-mp-chart');
+            return;
+        }
+        
+        clearNoDataMessage('borra-by-mp-chart');
+
+        const mpCounts = {};
+        borraData.forEach(item => {
+            const mpType = item.mp_type || item.raw?.mp_type || 'Não especificado';
+            const weight = item.raw?.refugo_kg || item.quantity || 0;
+            mpCounts[mpType] = (mpCounts[mpType] || 0) + weight;
+        });
+
+        const labels = Object.keys(mpCounts);
+        const data = Object.values(mpCounts);
+        const colors = ['#FCD34D', '#F59E0B', '#D97706', '#B45309', '#92400E'];
+
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: colors.slice(0, labels.length),
+                    borderWidth: 2,
+                    borderColor: '#fff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            font: { size: window.innerWidth < 768 ? 10 : 12 },
+                            padding: 15
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.label}: ${context.parsed.toFixed(1)} kg`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Gerar gráfico de borra por motivo
+    async function generateBorraByReasonChart(borraData) {
+        const ctx = document.getElementById('borra-by-reason-chart');
+        if (!ctx) return;
+
+        destroyChart('borra-by-reason-chart');
+
+        if (borraData.length === 0) {
+            showNoDataMessage('borra-by-reason-chart');
+            return;
+        }
+        
+        clearNoDataMessage('borra-by-reason-chart');
+
+        const reasonCounts = {};
+        borraData.forEach(item => {
+            let reason = item.reason || item.raw?.perdas || 'Não especificado';
+            // Remover prefixo "BORRA - " se existir
+            reason = reason.replace(/^BORRA\s*-\s*/i, '');
+            const weight = item.raw?.refugo_kg || item.quantity || 0;
+            reasonCounts[reason] = (reasonCounts[reason] || 0) + weight;
+        });
+
+        const sortedReasons = Object.entries(reasonCounts)
+            .sort(([,a], [,b]) => b - a)
+            .slice(0, 8); // Top 8 motivos
+
+        const labels = sortedReasons.map(([reason]) => reason);
+        const data = sortedReasons.map(([,weight]) => weight);
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Borra (kg)',
+                    data: data,
+                    backgroundColor: 'rgba(251, 191, 36, 0.8)',
+                    borderColor: '#F59E0B',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y',
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        ticks: {
+                            font: { size: window.innerWidth < 768 ? 10 : 12 }
+                        }
+                    },
+                    y: {
+                        ticks: {
+                            font: { size: window.innerWidth < 768 ? 9 : 11 }
+                        }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.parsed.x.toFixed(1)} kg`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Gerar gráfico de borra por máquina
+    async function generateBorraByMachineChart(borraData) {
+        const ctx = document.getElementById('borra-by-machine-chart');
+        if (!ctx) return;
+
+        destroyChart('borra-by-machine-chart');
+
+        if (borraData.length === 0) {
+            showNoDataMessage('borra-by-machine-chart');
+            return;
+        }
+        
+        clearNoDataMessage('borra-by-machine-chart');
+
+        const machineCounts = {};
+        borraData.forEach(item => {
+            const machine = item.machine || 'Não especificado';
+            const weight = item.raw?.refugo_kg || item.quantity || 0;
+            machineCounts[machine] = (machineCounts[machine] || 0) + weight;
+        });
+
+        const labels = Object.keys(machineCounts);
+        const data = Object.values(machineCounts);
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Borra (kg)',
+                    data: data,
+                    backgroundColor: 'rgba(251, 191, 36, 0.8)',
+                    borderColor: '#F59E0B',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            font: { size: window.innerWidth < 768 ? 10 : 12 }
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            font: { size: window.innerWidth < 768 ? 10 : 12 }
+                        }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.parsed.y.toFixed(1)} kg`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     // Função para calcular OEE detalhado
     async function calculateDetailedOEE(startDate, endDate, machine, shift) {
         try {
+            console.log('[TRACE][calculateDetailedOEE] Buscando dados para:', { startDate, endDate, machine, shift });
+            
             const [productionData, lossesData, downtimeData, planData] = await Promise.all([
                 getFilteredData('production', startDate, endDate, machine, 'all'),
                 getFilteredData('losses', startDate, endDate, machine, 'all'),
@@ -3795,13 +4629,40 @@ document.addEventListener('DOMContentLoaded', function() {
                 getFilteredData('plan', startDate, endDate, machine, 'all')
             ]);
 
-            const { filtered } = aggregateOeeMetrics(
+            console.log('[TRACE][calculateDetailedOEE] Dados recebidos:', {
+                production: productionData.length,
+                losses: lossesData.length,
+                downtime: downtimeData.length,
+                plan: planData.length
+            });
+
+            if (productionData.length === 0 && lossesData.length === 0 && downtimeData.length === 0) {
+                console.warn('[TRACE][calculateDetailedOEE] PROBLEMA: Nenhum dado encontrado para o período!');
+                return { availability: 0, performance: 0, quality: 0, oee: 0 };
+            }
+
+            const { filtered, groups } = aggregateOeeMetrics(
                 productionData,
                 lossesData,
                 downtimeData,
                 planData,
                 shift
             );
+
+            console.log('[TRACE][calculateDetailedOEE] Resultado da agregação:', {
+                gruposProcessados: groups.length,
+                disponibilidade: (filtered.disponibilidade * 100).toFixed(1),
+                performance: (filtered.performance * 100).toFixed(1),
+                qualidade: (filtered.qualidade * 100).toFixed(1),
+                oee: (filtered.oee * 100).toFixed(1)
+            });
+
+            // CORREÇÃO: Se todos os valores estão zero mas há dados, algo está errado
+            if (filtered.disponibilidade === 0 && filtered.performance === 0 && filtered.qualidade === 0 && productionData.length > 0) {
+                console.error('[TRACE][calculateDetailedOEE] PROBLEMA CRÍTICO: Valores zerados com dados disponíveis!');
+                console.log('[TRACE][calculateDetailedOEE] Amostra production:', productionData.slice(0, 3));
+                console.log('[TRACE][calculateDetailedOEE] Amostra plan:', planData.slice(0, 3));
+            }
 
             return {
                 availability: (filtered.disponibilidade * 100),
@@ -4344,11 +5205,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (planningForm) planningForm.addEventListener('submit', handlePlanningFormSubmit);
         if (planningDateSelector) planningDateSelector.addEventListener('change', (e) => listenToPlanningChanges(e.target.value));
+        if (productionOrderForm) productionOrderForm.addEventListener('submit', handleProductionOrderFormSubmit);
         
         // Adicionar listener para código do produto
-        const productCodSelect = document.getElementById('planning-product-cod');
-        if (productCodSelect) {
-            productCodSelect.addEventListener('change', onPlanningProductCodChange);
+        const productCodInput = document.getElementById('planning-product-cod');
+        if (productCodInput) {
+            ['change', 'blur'].forEach(evt => {
+                productCodInput.addEventListener(evt, onPlanningProductCodChange);
+            });
+            productCodInput.addEventListener('input', onPlanningProductCodChange);
         }
         
         if (planningTableBody) planningTableBody.addEventListener('click', handlePlanningTableClick);
@@ -4365,6 +5230,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (productionModalForm) productionModalForm.addEventListener('submit', handleProductionEntrySubmit);
         if (refreshRecentEntriesBtn) refreshRecentEntriesBtn.addEventListener('click', () => loadRecentEntries());
         if (recentEntriesList) recentEntriesList.addEventListener('click', handleRecentEntryAction);
+        if (finalizeOrderBtn) finalizeOrderBtn.addEventListener('click', handleFinalizeOrderClick);
         
         // Event listeners para filtros de lançamentos recentes
         const filterButtons = document.querySelectorAll('.filter-entry-btn');
@@ -4474,6 +5340,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (page === 'analise') {
             console.log('📊 Abrindo aba de análise');
             
+            // Garantir que o listener de ordens de produção está ativo
+            setupProductionOrdersTab();
+            listenToProductionOrders();
+            
             // Executar diagnóstico (apenas em desenvolvimento)
             diagnosticFirestoreData();
             
@@ -4547,29 +5417,928 @@ document.addEventListener('DOMContentLoaded', function() {
     function setupPlanningTab() {
         if (!planningMachineSelect) return;
         
-        const machineOptions = machineList.map(m => `<option value="${m}">${m}</option>`).join('');
+        const machineOptions = machineDatabase.map(m => `<option value="${m.id}">${m.id} - ${m.model}</option>`).join('');
         planningMachineSelect.innerHTML = `<option value="">Selecione...</option>${machineOptions}`;
 
         // Configurar select de código do produto
-        const productCodSelect = document.getElementById('planning-product-cod');
-        if (productCodSelect) {
-            // Ordenar produtos por código
+        const productCodInput = document.getElementById('planning-product-cod');
+        const productCodDatalist = document.getElementById('planning-product-cod-list');
+        if (productCodInput && productCodDatalist) {
             const sortedProducts = [...productDatabase].sort((a, b) => a.cod - b.cod);
-            const productOptions = sortedProducts.map(p => {
-                const mpAttr = encodeURIComponent(p.mp ?? '');
-                return `<option value="${p.cod}" data-client="${p.client}" data-name="${p.name}" data-cycle="${p.cycle}" data-cavities="${p.cavities}" data-weight="${p.weight}" data-mp="${mpAttr}">
-                    ${p.cod} - ${p.name} (${p.client})
-                </option>`;
+            const escapeOptionLabel = (str = '') => String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+            productCodDatalist.innerHTML = sortedProducts.map(p => {
+                const label = `${p.cod} - ${p.name} (${p.client})`;
+                const escapedLabel = escapeOptionLabel(label);
+                return `<option value="${p.cod}" label="${escapedLabel}">${escapedLabel}</option>`;
             }).join('');
-            productCodSelect.innerHTML = `<option value="">Selecione...</option>${productOptions}`;
+        }
+    }
+
+    // --- ABA DE ORDENS DE PRODUÇÃO ---
+    function setupProductionOrdersTab() {
+        if (!productionOrderCodeInput) return;
+
+        // Popular lista de códigos disponíveis
+        if (productionOrderCodeDatalist) {
+            const sortedProducts = [...productDatabase].sort((a, b) => a.cod - b.cod);
+            const escapeOptionLabel = (str = '') => String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+
+            productionOrderCodeDatalist.innerHTML = sortedProducts.map(product => {
+                const label = `${product.cod} - ${product.name} (${product.client})`;
+                const escaped = escapeOptionLabel(label);
+                return `<option value="${product.cod}" label="${escaped}">${escaped}</option>`;
+            }).join('');
+        }
+
+        // Popular select de máquinas no formulário
+        populateOrderMachineSelect();
+
+        productionOrderCodeInput.addEventListener('input', handleProductionOrderCodeInput);
+        productionOrderCodeInput.addEventListener('change', handleProductionOrderCodeSelection);
+
+        listenToProductionOrders();
+    }
+
+    function populatePlanningOrderSelect() {
+        if (!planningOrderSelect || !Array.isArray(productionOrdersCache)) return;
+
+        const currentValue = planningOrderSelect.value;
+
+        planningOrderSelect.innerHTML = '<option value="">Selecione uma OP...</option>';
+        productionOrdersCache.forEach(order => {
+            const option = document.createElement('option');
+            option.value = order.id;
+            option.textContent = `${order.order_number} - ${order.product || 'N/A'} (${order.customer || 'N/A'})`;
+            planningOrderSelect.appendChild(option);
+        });
+
+        planningOrderSelect.value = currentValue;
+        planningOrderSelect.addEventListener('change', handlePlanningOrderSelection);
+    }
+
+    function handlePlanningOrderSelection(e) {
+        const selectedOrderId = e.target.value;
+
+        if (!selectedOrderId) {
+            if (planningOrderInfo) {
+                planningOrderInfo.style.display = 'none';
+                planningOrderInfo.innerHTML = '';
+            }
+            return;
+        }
+
+        const selectedOrder = productionOrdersCache.find(o => o.id === selectedOrderId);
+        if (!selectedOrder) return;
+
+        const productCode = selectedOrder.part_code || selectedOrder.product_cod || '';
+        const product = productCode ? productDatabase.find(p => String(p.cod) === productCode) : null;
+
+        if (planningOrderInfo) {
+            const infoText = `OP: ${selectedOrder.order_number} | Produto: ${selectedOrder.product || 'N/A'} | Cliente: ${selectedOrder.customer || 'N/A'} | Lote: ${selectedOrder.lot_size || 'N/A'}`;
+            planningOrderInfo.textContent = infoText;
+            planningOrderInfo.style.display = 'block';
+        }
+
+        if (productCode) {
+            const planningProductCodInput = document.getElementById('planning-product-cod');
+            if (planningProductCodInput) {
+                planningProductCodInput.value = productCode;
+                planningProductCodInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+    }
+
+    function handleProductionOrderCodeInput(e) {
+        const rawCode = (e.target.value || '').trim();
+
+        if (!rawCode) {
+            clearProductionOrderAutoFields();
+            setProductionOrderFeedback();
+            return;
+        }
+
+        // Enquanto o usuário digita, ocultar mensagens para evitar falso negativo
+        setProductionOrderFeedback();
+    }
+
+    function handleProductionOrderCodeSelection(e) {
+        const rawCode = (e.target.value || '').trim();
+
+        if (!rawCode) {
+            clearProductionOrderAutoFields();
+            setProductionOrderFeedback();
+            return;
+        }
+
+        const product = productDatabase.find(item => String(item.cod) === rawCode);
+
+        if (product) {
+            fillProductionOrderFields(product);
+            const clientLabel = product.client ? ` • ${product.client}` : '';
+            setProductionOrderFeedback(`Produto carregado: ${product.name}${clientLabel}`, 'success');
+            return;
+        }
+
+        clearProductionOrderAutoFields();
+        setProductionOrderFeedback('Produto não encontrado na base. Preencha manualmente.', 'error');
+    }
+
+    function fillProductionOrderFields(product) {
+        if (!product) return;
+
+        if (productionOrderProductInput) {
+            productionOrderProductInput.value = product.name || '';
+        }
+
+        if (productionOrderCustomerInput) {
+            productionOrderCustomerInput.value = product.client || '';
+        }
+
+        if (productionOrderRawMaterialInput) {
+            productionOrderRawMaterialInput.value = product.mp || '';
+        }
+    }
+
+    function clearProductionOrderAutoFields() {
+        if (productionOrderProductInput) productionOrderProductInput.value = '';
+        if (productionOrderCustomerInput) productionOrderCustomerInput.value = '';
+        if (productionOrderRawMaterialInput) productionOrderRawMaterialInput.value = '';
+    }
+
+    function setProductionOrderFeedback(message = '', type = 'info') {
+        if (!productionOrderFeedback) return;
+
+        if (!message) {
+            productionOrderFeedback.textContent = '';
+            productionOrderFeedback.style.display = 'none';
+            productionOrderFeedback.className = 'mt-2 text-sm font-medium text-primary-blue';
+            return;
+        }
+
+        const baseClasses = 'mt-2 text-sm font-medium';
+        const typeClass = type === 'success'
+            ? 'text-emerald-600'
+            : type === 'error'
+                ? 'text-red-600'
+                : 'text-primary-blue';
+
+        productionOrderFeedback.textContent = message;
+        productionOrderFeedback.style.display = 'block';
+        productionOrderFeedback.className = `${baseClasses} ${typeClass}`;
+    }
+
+    function escapeHtml(str = '') {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function parseOptionalNumber(value) {
+        if (value === null || value === undefined || value === '') return null;
+        const num = Number(value);
+        return Number.isFinite(num) ? num : null;
+    }
+
+    function getProductionOrderStatusBadge(status = 'planejada') {
+        const statusMap = {
+            'planejada': { label: 'Planejada', className: 'bg-sky-100 text-sky-700' },
+            'em_andamento': { label: 'Em andamento', className: 'bg-amber-100 text-amber-700' },
+            'concluida': { label: 'Concluída', className: 'bg-emerald-100 text-emerald-700' },
+            'cancelada': { label: 'Cancelada', className: 'bg-red-100 text-red-700' }
+        };
+
+        const safeStatus = statusMap[status] || statusMap['planejada'];
+        return `<span class="px-2 py-1 rounded-full text-xs font-semibold ${safeStatus.className}">${safeStatus.label}</span>`;
+    }
+
+    function setProductionOrderStatus(message = '', type = 'info') {
+        if (!productionOrderStatusMessage) return;
+
+        if (!message) {
+            productionOrderStatusMessage.textContent = '';
+            productionOrderStatusMessage.className = 'text-sm font-semibold h-5 text-center';
+            return;
+        }
+
+        const baseClasses = 'text-sm font-semibold h-5 text-center';
+        const typeClass = type === 'success'
+            ? 'text-status-success'
+            : type === 'error'
+                ? 'text-status-error'
+                : 'text-gray-600';
+
+        productionOrderStatusMessage.textContent = message;
+        productionOrderStatusMessage.className = `${baseClasses} ${typeClass}`;
+    }
+
+    function renderProductionOrdersTable(orders = []) {
+        if (!productionOrderTableBody) return;
+
+        if (!Array.isArray(orders) || orders.length === 0) {
+            productionOrderTableBody.innerHTML = '';
+            if (productionOrderEmptyState) {
+                productionOrderEmptyState.style.display = 'block';
+            }
+            return;
+        }
+
+        const rows = orders.map(order => {
+            const orderNumber = escapeHtml(order.order_number || order.orderNumber || '-');
+            const productName = escapeHtml(order.product || order.product_name || '-');
+            const customer = escapeHtml(order.customer || order.client || '-');
+            const productCode = escapeHtml(order.part_code || order.product_cod || '-');
+            const lotSizeNumber = parseOptionalNumber(order.lot_size || order.lotSize);
+            const lotSizeDisplay = Number.isFinite(lotSizeNumber) && lotSizeNumber > 0
+                ? lotSizeNumber.toLocaleString('pt-BR')
+                : '-';
+            const statusBadge = getProductionOrderStatusBadge(order.status);
+            const createdAt = order.createdAt?.toDate ? order.createdAt.toDate() : null;
+            const createdAtLabel = createdAt ? createdAt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-';
+
+            return `
+                <tr class="odd:bg-white even:bg-gray-50" data-order-id="${escapeHtml(order.id || '')}">
+                    <td class="px-3 py-2 text-sm border align-middle font-semibold text-gray-800">${orderNumber}</td>
+                    <td class="px-3 py-2 text-sm border align-middle text-gray-700">${productName}</td>
+                    <td class="px-3 py-2 text-sm border align-middle text-gray-700">${customer}</td>
+                    <td class="px-3 py-2 text-sm border align-middle text-gray-700">${productCode}</td>
+                    <td class="px-3 py-2 text-sm border align-middle text-center text-gray-700">${lotSizeDisplay}</td>
+                    <td class="px-3 py-2 text-sm border align-middle text-center">${statusBadge}</td>
+                    <td class="px-3 py-2 text-sm border align-middle">
+                        <div class="flex items-center justify-center gap-2 text-gray-400">
+                            <i data-lucide="clock" class="w-4 h-4"></i>
+                            <span class="text-xs font-medium">${createdAtLabel}</span>
+                        </div>
+                    </td>
+                    <td class="px-3 py-2 text-sm border align-middle">
+                        <div class="flex items-center justify-center gap-1 flex-wrap">
+                            <button type="button" class="edit-production-order p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors" data-order-id="${escapeHtml(order.id || '')}" title="Editar ordem">
+                                <i data-lucide="edit-2" class="w-4 h-4"></i>
+                            </button>
+                            ${order.status === 'ativa' ? `
+                                <button type="button" class="finish-production-order p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors" data-order-id="${escapeHtml(order.id || '')}" title="Finalizar OP">
+                                    <i data-lucide="check-circle" class="w-4 h-4"></i>
+                                </button>
+                            ` : order.status !== 'concluida' ? `
+                                <button type="button" class="activate-production-order p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors" data-order-id="${escapeHtml(order.id || '')}" data-machine-id="${escapeHtml(order.machine_id || '')}" title="Ativar OP">
+                                    <i data-lucide="play-circle" class="w-4 h-4"></i>
+                                </button>
+                            ` : ''}
+                            <button type="button" class="adjust-quantity-order p-1.5 text-yellow-600 hover:bg-yellow-50 rounded transition-colors" data-order-id="${escapeHtml(order.id || '')}" title="Ajustar quantidade">
+                                <i data-lucide="package-minus" class="w-4 h-4"></i>
+                            </button>
+                            ${order.status !== 'ativa' ? `
+                                <button type="button" class="delete-production-order p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" data-order-id="${escapeHtml(order.id || '')}" title="Excluir ordem">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </button>
+                            ` : ''}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        productionOrderTableBody.innerHTML = rows;
+        if (productionOrderEmptyState) {
+            productionOrderEmptyState.style.display = 'none';
+        }
+
+        // Adicionar listeners para todos os botões da tabela
+        document.querySelectorAll('.edit-production-order').forEach(btn => {
+            btn.addEventListener('click', handleEditProductionOrder);
+        });
+        document.querySelectorAll('.activate-production-order').forEach(btn => {
+            btn.addEventListener('click', handleActivateProductionOrder);
+        });
+        document.querySelectorAll('.finish-production-order').forEach(btn => {
+            btn.addEventListener('click', handleFinishProductionOrder);
+        });
+        document.querySelectorAll('.adjust-quantity-order').forEach(btn => {
+            btn.addEventListener('click', handleAdjustQuantityOrder);
+        });
+        document.querySelectorAll('.delete-production-order').forEach(btn => {
+            btn.addEventListener('click', handleDeleteProductionOrder);
+        });
+
+        lucide.createIcons();
+    }
+
+    function handleEditProductionOrder(e) {
+        const orderId = e.currentTarget.dataset.orderId;
+        const order = productionOrdersCache.find(o => o.id === orderId);
+        if (!order) return;
+
+        // Preencher form com dados da ordem para edição
+        if (productionOrderForm) {
+            document.getElementById('order-number').value = order.order_number || '';
+            document.getElementById('order-product').value = order.product || '';
+            document.getElementById('order-lot-size').value = order.lot_size || '';
+            document.getElementById('order-batch').value = order.batch_number || '';
+            document.getElementById('order-customer-order').value = order.customer_order || '';
+            document.getElementById('order-customer').value = order.customer || '';
+            document.getElementById('order-part-code').value = order.part_code || '';
+            document.getElementById('order-packaging-qty').value = order.packaging_qty || '';
+            document.getElementById('order-internal-packaging-qty').value = order.internal_packaging_qty || '';
+            document.getElementById('order-raw-material').value = order.raw_material || '';
+
+            // Salvar ID para update
+            productionOrderForm.dataset.editingOrderId = orderId;
+
+            // Mudar texto do botão
+            const submitButton = productionOrderForm.querySelector('button[type="submit"]');
+            if (submitButton) {
+                submitButton.innerHTML = `<i data-lucide="save"></i><span>Salvar Alterações</span>`;
+            }
+
+            // Scroll para o formulário
+            productionOrderForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            lucide.createIcons();
+        }
+    }
+
+    async function handleActivateProductionOrder(e) {
+        e.preventDefault();
+        const orderId = e.currentTarget.dataset.orderId;
+        const machineId = e.currentTarget.dataset.machineId;
+        const order = productionOrdersCache.find(o => o.id === orderId);
+
+        if (!order || !machineId) {
+            alert('Dados da ordem não encontrados.');
+            return;
+        }
+
+        try {
+            setProductionOrderStatus('Ativando ordem...', 'info');
+            const success = await setOrderAsActive(orderId, machineId);
+            
+            if (success) {
+                setProductionOrderStatus('Ordem ativada com sucesso!', 'success');
+                setTimeout(() => setProductionOrderStatus('', 'info'), 2000);
+            } else {
+                setProductionOrderStatus('Operação cancelada ou erro.', 'error');
+            }
+        } catch (error) {
+            console.error('Erro ao ativar ordem:', error);
+            setProductionOrderStatus('Erro ao ativar ordem. Tente novamente.', 'error');
+        }
+    }
+
+    async function handleFinishProductionOrder(e) {
+        e.preventDefault();
+        const orderId = e.currentTarget.dataset.orderId;
+        const order = productionOrdersCache.find(o => o.id === orderId);
+
+        if (!order) {
+            alert('Ordem não encontrada.');
+            return;
+        }
+
+        try {
+            setProductionOrderStatus('Finalizando ordem...', 'info');
+            const success = await finishActiveOrder(orderId);
+            
+            if (success) {
+                setProductionOrderStatus('Ordem finalizada com sucesso!', 'success');
+                setTimeout(() => setProductionOrderStatus('', 'info'), 2000);
+            } else {
+                setProductionOrderStatus('Operação cancelada.', 'info');
+            }
+        } catch (error) {
+            console.error('Erro ao finalizar ordem:', error);
+            setProductionOrderStatus('Erro ao finalizar ordem. Tente novamente.', 'error');
+        }
+    }
+
+    async function handleDeleteProductionOrder(e) {
+        e.preventDefault();
+        const orderId = e.currentTarget.dataset.orderId;
+        const order = productionOrdersCache.find(o => o.id === orderId);
+
+        if (!order) return;
+
+        if (order.status === 'ativa') {
+            alert('Não é possível excluir uma OP ativa. Finalize a OP primeiro.');
+            return;
+        }
+
+        if (!confirm(`Tem certeza que deseja excluir a OP "${order.order_number}"?`)) {
+            return;
+        }
+
+        try {
+            setProductionOrderStatus('Excluindo ordem...', 'info');
+            await db.collection('production_orders').doc(orderId).delete();
+            setProductionOrderStatus('Ordem excluída com sucesso!', 'success');
+            setTimeout(() => setProductionOrderStatus('', 'info'), 2000);
+        } catch (error) {
+            console.error('Erro ao excluir ordem:', error);
+            setProductionOrderStatus('Erro ao excluir ordem. Tente novamente.', 'error');
+        }
+    }
+
+    function handleAdjustQuantityOrder(e) {
+        e.preventDefault();
+        const orderId = e.currentTarget.dataset.orderId;
+        const order = productionOrdersCache.find(o => o.id === orderId);
+
+        if (!order) {
+            alert('Ordem de produção não encontrada.');
+            return;
+        }
+
+        showAdjustQuantityModal(order);
+    }
+
+    function showAdjustQuantityModal(order) {
+        const modal = document.getElementById('adjust-quantity-modal');
+        const opNumberSpan = document.getElementById('adjust-op-number');
+        const opProductSpan = document.getElementById('adjust-op-product');
+        const opOriginalQtySpan = document.getElementById('adjust-op-original-qty');
+        const reductionInput = document.getElementById('adjust-reduction-qty');
+        const reasonSelect = document.getElementById('adjust-reason');
+        const observationsInput = document.getElementById('adjust-observations');
+        const finalQtySpan = document.getElementById('adjust-final-qty');
+        const statusDiv = document.getElementById('adjust-quantity-status');
+
+        if (!modal) return;
+
+        // Preencher informações da OP
+        if (opNumberSpan) opNumberSpan.textContent = order.order_number || '-';
+        if (opProductSpan) opProductSpan.textContent = order.product || '-';
+        
+        const originalQty = parseOptionalNumber(order.lot_size || order.lotSize) || 0;
+        if (opOriginalQtySpan) opOriginalQtySpan.textContent = originalQty.toLocaleString('pt-BR');
+
+        // Limpar campos
+        if (reductionInput) reductionInput.value = '';
+        if (reasonSelect) reasonSelect.value = '';
+        if (observationsInput) observationsInput.value = '';
+        if (finalQtySpan) finalQtySpan.textContent = originalQty.toLocaleString('pt-BR');
+        if (statusDiv) statusDiv.textContent = '';
+
+        // Armazenar dados da ordem para uso posterior
+        modal.dataset.orderId = order.id;
+        modal.dataset.originalQty = originalQty.toString();
+
+        // Listener para cálculo em tempo real da quantidade final
+        if (reductionInput) {
+            reductionInput.addEventListener('input', updateFinalQuantity);
+        }
+
+        modal.classList.remove('hidden');
+    }
+
+    function updateFinalQuantity() {
+        const modal = document.getElementById('adjust-quantity-modal');
+        const reductionInput = document.getElementById('adjust-reduction-qty');
+        const finalQtySpan = document.getElementById('adjust-final-qty');
+
+        if (!modal || !reductionInput || !finalQtySpan) return;
+
+        const originalQty = parseInt(modal.dataset.originalQty || '0');
+        const adjustmentQty = parseInt(reductionInput.value || '0');
+        const newQty = originalQty + adjustmentQty;
+
+        // Mostrar a nova quantidade após o ajuste
+        if (adjustmentQty !== 0) {
+            const sign = adjustmentQty > 0 ? '+' : '';
+            finalQtySpan.textContent = `${newQty.toLocaleString('pt-BR')} (${sign}${adjustmentQty.toLocaleString('pt-BR')})`;
+        } else {
+            finalQtySpan.textContent = originalQty.toLocaleString('pt-BR');
+        }
+        
+        // Validação visual - não permitir quantidade final negativa
+        if (newQty < 0) {
+            finalQtySpan.className = 'text-lg font-bold text-red-600';
+            reductionInput.style.borderColor = '#DC2626';
+        } else if (adjustmentQty > 0) {
+            finalQtySpan.className = 'text-lg font-bold text-green-600';
+            reductionInput.style.borderColor = '#10B981';
+        } else if (adjustmentQty < 0) {
+            finalQtySpan.className = 'text-lg font-bold text-orange-600';
+            reductionInput.style.borderColor = '#F59E0B';
+        } else {
+            finalQtySpan.className = 'text-lg font-bold text-blue-800';
+            reductionInput.style.borderColor = '#D1D5DB';
+        }
+    }
+
+    function closeAdjustQuantityModal() {
+        const modal = document.getElementById('adjust-quantity-modal');
+        const reductionInput = document.getElementById('adjust-reduction-qty');
+        
+        if (modal) {
+            modal.classList.add('hidden');
+            modal.removeAttribute('data-order-id');
+            modal.removeAttribute('data-original-qty');
+        }
+        
+        // Remover listener temporário
+        if (reductionInput) {
+            reductionInput.removeEventListener('input', updateFinalQuantity);
+        }
+    }
+
+    async function handleAdjustQuantitySubmit(e) {
+        e.preventDefault();
+
+        const modal = document.getElementById('adjust-quantity-modal');
+        const orderId = modal?.dataset.orderId;
+        const originalQty = parseInt(modal?.dataset.originalQty || '0');
+        
+        const reductionInput = document.getElementById('adjust-reduction-qty');
+        const reasonSelect = document.getElementById('adjust-reason');
+        const observationsInput = document.getElementById('adjust-observations');
+        const statusDiv = document.getElementById('adjust-quantity-status');
+        const submitButton = document.getElementById('adjust-quantity-save');
+
+        if (!orderId) {
+            alert('Erro interno: ID da ordem não encontrado.');
+            return;
+        }
+
+        const adjustmentQty = parseInt(reductionInput?.value || '0');
+        const reason = reasonSelect?.value || '';
+        const observations = (observationsInput?.value || '').trim();
+
+        // Validações
+        if (!adjustmentQty || adjustmentQty === 0) {
+            alert('Informe um valor válido para o ajuste (positivo para aumentar, negativo para reduzir).');
+            if (reductionInput) reductionInput.focus();
+            return;
+        }
+
+        const finalQty = originalQty + adjustmentQty;
+
+        if (finalQty < 0) {
+            alert('A quantidade final não pode ser negativa. Ajuste inválido.');
+            if (reductionInput) reductionInput.focus();
+            return;
+        }
+
+        if (!reason) {
+            alert('Selecione o motivo do ajuste.');
+            if (reasonSelect) reasonSelect.focus();
+            return;
+        }
+
+        try {
+            if (statusDiv) statusDiv.textContent = 'Aplicando ajuste...';
+            if (submitButton) {
+                submitButton.disabled = true;
+                submitButton.textContent = 'Aplicando...';
+            }
+
+            // Criar registro do ajuste (para o array, sem serverTimestamp)
+            const adjustmentRecordForArray = {
+                orderId: orderId,
+                originalQuantity: originalQty,
+                adjustmentQuantity: adjustmentQty,
+                finalQuantity: finalQty,
+                adjustmentType: adjustmentQty > 0 ? 'increase' : 'decrease',
+                reason: reason,
+                observations: observations,
+                adjustedBy: getActiveUser()?.name || 'Sistema',
+                adjustedAt: new Date().toISOString(),
+                workDay: new Date().toISOString().split('T')[0]
+            };
+
+            // Criar registro do ajuste (para coleção separada, com serverTimestamp)
+            const adjustmentRecordForCollection = {
+                ...adjustmentRecordForArray,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            };
+
+            // Salvar registro do ajuste na coleção
+            await db.collection('quantity_adjustments').add(adjustmentRecordForCollection);
+
+            // Atualizar a quantidade do lote (lot_size) da OP
+            const currentOrder = await db.collection('production_orders').doc(orderId).get();
+            const orderData = currentOrder.data();
+            const currentAdjustments = orderData.quantity_adjustments || [];
+            
+            await db.collection('production_orders').doc(orderId).update({
+                lot_size: finalQty,
+                quantity_adjustments: [...currentAdjustments, adjustmentRecordForArray],
+                total_adjustments: (orderData.total_adjustments || 0) + adjustmentQty,
+                lastQuantityAdjustment: adjustmentRecordForArray,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            if (statusDiv) {
+                statusDiv.className = 'text-sm font-semibold h-5 text-center mt-2 text-green-600';
+                statusDiv.textContent = 'Ajuste aplicado com sucesso!';
+            }
+            
+            // Recarregar a lista de ordens se estiver visível
+            if (typeof loadProductionOrders === 'function') {
+                await loadProductionOrders();
+            }
+            
+            setTimeout(() => {
+                closeAdjustQuantityModal();
+            }, 1500);
+
+        } catch (error) {
+            console.error('Erro ao aplicar ajuste de quantidade:', error);
+            if (statusDiv) {
+                statusDiv.className = 'text-sm font-semibold h-5 text-center mt-2 text-red-600';
+                statusDiv.textContent = 'Erro ao aplicar ajuste. Tente novamente.';
+            }
+        } finally {
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.textContent = 'Aplicar Ajuste';
+            }
+        }
+    }
+
+    // Funções para controle de OP ativa na máquina
+    async function checkActiveOrderOnMachine(machineId) {
+        try {
+            const snapshot = await db.collection('production_orders')
+                .where('machine_id', '==', machineId)
+                .where('status', '==', 'ativa')
+                .limit(1)
+                .get();
+            
+            return snapshot.empty ? null : { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+        } catch (error) {
+            console.error('Erro ao verificar OP ativa na máquina:', error);
+            return null;
+        }
+    }
+
+    async function setOrderAsActive(orderId, machineId) {
+        try {
+            // Verificar se já existe OP ativa na máquina
+            const activeOrder = await checkActiveOrderOnMachine(machineId);
+            
+            if (activeOrder && activeOrder.id !== orderId) {
+                const confirmChange = confirm(
+                    `A máquina ${machineId} já possui a OP "${activeOrder.order_number}" ativa.\n\n` +
+                    `Deseja finalizar a OP atual e ativar a nova OP?\n\n` +
+                    `⚠️ IMPORTANTE: Certifique-se de que todas as quantidades da OP atual estão corretas antes de continuar.`
+                );
+                
+                if (!confirmChange) {
+                    return false;
+                }
+                
+                // Finalizar OP atual
+                await db.collection('production_orders').doc(activeOrder.id).update({
+                    status: 'concluida',
+                    finishedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    finishedBy: getActiveUser()?.name || 'Sistema'
+                });
+            }
+            
+            // Ativar nova OP
+            await db.collection('production_orders').doc(orderId).update({
+                status: 'ativa',
+                startedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                startedBy: getActiveUser()?.name || 'Sistema'
+            });
+            
+            return true;
+        } catch (error) {
+            console.error('Erro ao ativar OP na máquina:', error);
+            return false;
+        }
+    }
+
+    async function finishActiveOrder(orderId) {
+        try {
+            const confirmFinish = confirm(
+                `Deseja finalizar esta Ordem de Produção?\n\n` +
+                `⚠️ IMPORTANTE: Certifique-se de que todas as quantidades produzidas estão corretas.\n` +
+                `Após finalizar, uma nova OP poderá ser ativada na máquina.`
+            );
+            
+            if (!confirmFinish) {
+                return false;
+            }
+            
+            await db.collection('production_orders').doc(orderId).update({
+                status: 'concluida',
+                finishedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                finishedBy: getActiveUser()?.name || 'Sistema'
+            });
+            
+            return true;
+        } catch (error) {
+            console.error('Erro ao finalizar OP:', error);
+            return false;
+        }
+    }
+
+    // Função para verificar e restaurar paradas ativas do Firebase
+    async function checkActiveDowntimes() {
+        if (!db || !selectedMachineData) return;
+        
+        try {
+            const activeDowntimeDoc = await db.collection('active_downtimes').doc(selectedMachineData.machine).get();
+            
+            if (activeDowntimeDoc.exists) {
+                const activeDowntime = activeDowntimeDoc.data();
+                console.log('[TRACE] Parada ativa encontrada no Firebase:', activeDowntime);
+                
+                // Restaurar estado da parada
+                const startDate = activeDowntime.startDate || '';
+                const startTime = activeDowntime.startTime || '';
+                
+                currentDowntimeStart = {
+                    machine: activeDowntime.machine,
+                    date: startDate,
+                    startTime: startTime,
+                    startTimestamp: activeDowntime.startTimestamp?.toDate() || new Date()
+                };
+                
+                machineStatus = 'stopped';
+                updateMachineStatus();
+                freezeProductionTimer();
+                startDowntimeTimer();
+                
+                // Calcular tempo desde o início da parada
+                const now = new Date();
+                const startDateTime = activeDowntime.startTimestamp?.toDate() || new Date();
+                const elapsedHours = ((now - startDateTime) / (1000 * 60 * 60)).toFixed(1);
+                
+                showNotification(`Parada ativa restaurada! Tempo decorrido: ${elapsedHours}h`, 'warning');
+                
+                console.log('[TRACE] Estado da parada restaurado com sucesso');
+            } else {
+                console.log('[TRACE] Nenhuma parada ativa encontrada para a máquina', selectedMachineData.machine);
+            }
+        } catch (error) {
+            console.error('Erro ao verificar paradas ativas:', error);
+        }
+    }
+
+    function listenToProductionOrders() {
+        if (!db || !productionOrderTableBody) return;
+
+        if (typeof productionOrdersUnsubscribe === 'function') {
+            productionOrdersUnsubscribe();
+        }
+
+        try {
+            productionOrdersUnsubscribe = db.collection('production_orders')
+                .orderBy('createdAt', 'desc')
+                .onSnapshot(snapshot => {
+                    productionOrdersCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    renderProductionOrdersTable(productionOrdersCache);
+                    populatePlanningOrderSelect();
+                    if (productionOrderStatusMessage && productionOrderStatusMessage.className.includes('text-status-error')) {
+                        setProductionOrderStatus('', 'info');
+                    }
+                }, error => {
+                    console.error('Erro ao carregar ordens de produção:', error);
+                    renderProductionOrdersTable([]);
+                    setProductionOrderStatus('Não foi possível carregar as ordens de produção.', 'error');
+                });
+        } catch (error) {
+            console.error('Erro ao inicializar listener de ordens de produção:', error);
+            setProductionOrderStatus('Erro ao iniciar monitoramento das ordens.', 'error');
+        }
+    }
+
+    async function handleProductionOrderFormSubmit(event) {
+        event.preventDefault();
+
+        if (!productionOrderForm) return;
+
+        if (!window.authSystem.checkPermissionForAction('create_production_order')) {
+            return;
+        }
+
+        const formData = new FormData(productionOrderForm);
+        const rawData = Object.fromEntries(formData.entries());
+
+        const orderNumber = (rawData.order_number || '').trim();
+        if (!orderNumber) {
+            setProductionOrderStatus('Informe o número da OP antes de salvar.', 'error');
+            return;
+        }
+
+        const normalizedOrderNumber = orderNumber.toUpperCase();
+
+        const partCode = (rawData.part_code || '').trim();
+        const matchedProduct = partCode ? productDatabase.find(item => String(item.cod) === partCode) : null;
+
+        const submitButton = productionOrderForm.querySelector('button[type="submit"]');
+        const originalButtonContent = submitButton ? submitButton.innerHTML : '';
+
+        try {
+            if (submitButton) {
+                submitButton.disabled = true;
+                submitButton.innerHTML = `<i data-lucide="loader-2" class="animate-spin"></i><span>Salvando...</span>`;
+                lucide.createIcons();
+            }
+
+            setProductionOrderStatus('Salvando ordem de produção...', 'info');
+
+            const existingSnapshot = await db.collection('production_orders')
+                .where('order_number', '==', normalizedOrderNumber)
+                .limit(1)
+                .get();
+
+            if (!existingSnapshot.empty && !productionOrderForm.dataset.editingOrderId) {
+                setProductionOrderStatus('Já existe uma ordem com este número.', 'error');
+                return;
+            }
+
+            // Se estamos editando, deletar ordem antiga se o número mudou
+            const editingOrderId = productionOrderForm.dataset.editingOrderId;
+            if (editingOrderId && !existingSnapshot.empty && existingSnapshot.docs[0].id !== editingOrderId) {
+                setProductionOrderStatus('Já existe uma ordem com este número.', 'error');
+                return;
+            }
+
+            const docData = {
+                order_number: normalizedOrderNumber,
+                order_number_original: orderNumber,
+                customer_order: (rawData.customer_order || '').trim(),
+                customer: (rawData.customer || matchedProduct?.client || '').trim(),
+                client: (rawData.customer || matchedProduct?.client || '').trim(),
+                product: (rawData.product || matchedProduct?.name || '').trim(),
+                part_code: partCode,
+                product_cod: partCode,
+                lot_size: parseOptionalNumber(rawData.lot_size),
+                batch_number: (rawData.batch_number || '').trim(),
+                packaging_qty: parseOptionalNumber(rawData.packaging_qty),
+                internal_packaging_qty: parseOptionalNumber(rawData.internal_packaging_qty),
+                raw_material: (rawData.raw_material || matchedProduct?.mp || '').trim(),
+                machine_id: (rawData.machine_id || '').trim() || null,
+                status: 'planejada',
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+
+            if (!editingOrderId) {
+                docData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+            }
+
+            if (matchedProduct) {
+                docData.product_snapshot = {
+                    cod: matchedProduct.cod,
+                    client: matchedProduct.client || '',
+                    name: matchedProduct.name || '',
+                    cavities: parseOptionalNumber(matchedProduct.cavities),
+                    cycle: parseOptionalNumber(matchedProduct.cycle),
+                    weight: parseOptionalNumber(matchedProduct.weight),
+                    mp: matchedProduct.mp || ''
+                };
+            }
+
+            if (editingOrderId) {
+                await db.collection('production_orders').doc(editingOrderId).update(docData);
+                setProductionOrderStatus('Ordem atualizada com sucesso!', 'success');
+            } else {
+                await db.collection('production_orders').add(docData);
+                setProductionOrderStatus('Ordem cadastrada com sucesso!', 'success');
+            }
+
+            productionOrderForm.reset();
+            delete productionOrderForm.dataset.editingOrderId;
+            clearProductionOrderAutoFields();
+            setProductionOrderFeedback();
+
+            if (submitButton) {
+                submitButton.innerHTML = `<i data-lucide="plus-circle"></i><span>Cadastrar OP</span>`;
+            }
+
+            setTimeout(() => setProductionOrderStatus('', 'info'), 3000);
+        } catch (error) {
+            console.error('Erro ao cadastrar ordem de produção:', error);
+            setProductionOrderStatus('Erro ao cadastrar ordem. Tente novamente.', 'error');
+        } finally {
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.innerHTML = originalButtonContent;
+                lucide.createIcons();
+            }
         }
     }
 
     function onPlanningProductCodChange(e) {
-        const productCod = e.target.value;
-        const selectedOption = e.target.selectedOptions[0];
-        const product = productDatabase.find(p => String(p.cod) === String(productCod));
-        
+        const input = e?.target;
+        if (!input) return;
+
+        const rawCode = (input.value || '').trim();
+        const product = productDatabase.find(p => String(p.cod) === rawCode);
+
         const cycleInput = document.getElementById('budgeted-cycle');
         const cavitiesInput = document.getElementById('mold-cavities');
         const weightInput = document.getElementById('piece-weight');
@@ -4577,38 +6346,58 @@ document.addEventListener('DOMContentLoaded', function() {
         const productNameDisplay = document.getElementById('product-name-display');
         const mpInput = planningMpInput || document.getElementById('planning-mp');
 
-        if (productCod && selectedOption) {
-            const client = selectedOption.dataset.client;
-            const name = selectedOption.dataset.name;
-            const cycle = parseFloat(selectedOption.dataset.cycle) || 0;
-            const cavities = parseInt(selectedOption.dataset.cavities) || 0;
-            const weight = parseFloat(selectedOption.dataset.weight) || 0;
-            const mp = selectedOption.dataset.mp ? decodeURIComponent(selectedOption.dataset.mp) : (product?.mp || '');
-
-            if (cycleInput) cycleInput.value = cycle;
-            if (cavitiesInput) cavitiesInput.value = cavities;
-            if (weightInput) weightInput.value = weight;
-            if (mpInput) mpInput.value = mp;
-            
-            // Calcular quantidade planejada (85% de eficiência)
-            const plannedQty = cycle > 0 ? Math.floor((86400 / cycle) * cavities * 0.85) : 0;
-            if (plannedQtyInput) plannedQtyInput.value = plannedQty;
-            
-            // Mostrar nome do produto selecionado
-            if (productNameDisplay) {
-                productNameDisplay.textContent = `${name} (${client})`;
-                productNameDisplay.style.display = 'block';
-            }
-        } else {
+        const resetFields = () => {
             if (cycleInput) cycleInput.value = '';
             if (cavitiesInput) cavitiesInput.value = '';
             if (weightInput) weightInput.value = '';
             if (plannedQtyInput) plannedQtyInput.value = '';
             if (mpInput) mpInput.value = '';
+        };
+
+        const hideDisplay = () => {
             if (productNameDisplay) {
                 productNameDisplay.textContent = '';
                 productNameDisplay.style.display = 'none';
+                productNameDisplay.classList.remove('text-red-600', 'bg-red-50');
+                productNameDisplay.classList.add('text-primary-blue', 'bg-gray-50');
             }
+        };
+
+        if (product) {
+            if (cycleInput) cycleInput.value = product.cycle || '';
+            if (cavitiesInput) cavitiesInput.value = product.cavities || '';
+            if (weightInput) weightInput.value = typeof product.weight === 'number' ? product.weight : '';
+            if (mpInput) mpInput.value = product.mp || '';
+
+            const cycle = Number(product.cycle) || 0;
+            const cavities = Number(product.cavities) || 0;
+            const plannedQty = cycle > 0 ? Math.floor((86400 / cycle) * cavities * 0.85) : 0;
+            if (plannedQtyInput) plannedQtyInput.value = plannedQty;
+
+            if (productNameDisplay) {
+                productNameDisplay.textContent = `${product.name} (${product.client})`;
+                productNameDisplay.style.display = 'block';
+                productNameDisplay.classList.remove('text-red-600', 'bg-red-50');
+                productNameDisplay.classList.add('text-primary-blue', 'bg-gray-50');
+            }
+            return;
+        }
+
+        // Caso sem produto encontrado
+        resetFields();
+
+        if (!rawCode) {
+            hideDisplay();
+            return;
+        }
+
+        if (productNameDisplay && e.type !== 'input') {
+            productNameDisplay.textContent = 'Produto não encontrado';
+            productNameDisplay.style.display = 'block';
+            productNameDisplay.classList.remove('text-primary-blue', 'bg-gray-50');
+            productNameDisplay.classList.add('text-red-600', 'bg-red-50');
+        } else if (productNameDisplay && e.type === 'input') {
+            hideDisplay();
         }
     }
 
@@ -4645,13 +6434,6 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             const mpValue = (data.mp || product.mp || '').trim();
             product.mp = mpValue;
-            const productCodSelect = document.getElementById('planning-product-cod');
-            if (productCodSelect) {
-                const optionToUpdate = productCodSelect.querySelector(`option[value="${productCod}"]`);
-                if (optionToUpdate) {
-                    optionToUpdate.dataset.mp = encodeURIComponent(mpValue);
-                }
-            }
             const docData = {
                 date: data.date,
                 machine: data.machine,
@@ -5267,11 +7049,24 @@ document.addEventListener('DOMContentLoaded', function() {
         if (machineIcon) machineIcon.textContent = selectedMachineData.machine;
         if (machineName) machineName.textContent = `Máquina ${selectedMachineData.machine}`;
         if (productName) productName.textContent = selectedMachineData.product || 'Produto não definido';
-        if (shiftTarget) shiftTarget.textContent = selectedMachineData.planned_quantity || 0;
+        if (shiftTarget) {
+            // Usar APENAS lot_size, não planned_quantity (meta diária)
+            const totalPlanned = selectedMachineData.order_lot_size || selectedMachineData.lot_size || 0;
+            const totalExecuted = selectedMachineData.total_produzido || 0;
+            
+            if (!totalPlanned) {
+                shiftTarget.textContent = `${totalExecuted.toLocaleString('pt-BR')} / N/A`;
+            } else {
+                shiftTarget.textContent = `${totalExecuted.toLocaleString('pt-BR')} / ${totalPlanned.toLocaleString('pt-BR')}`;
+            }
+        }
     }
     
     async function loadHourlyProductionChart() {
         if (!selectedMachineData || !hourlyProductionChart) return;
+
+        currentActiveOrder = null;
+        currentOrderProgress = { executed: 0, planned: 0, expected: 0 };
         
         try {
             const today = getProductionDateString();
@@ -5284,13 +7079,49 @@ document.addEventListener('DOMContentLoaded', function() {
             const hourlyData = {};
             for (let i = 7; i < 31; i++) {
                 const hour = i >= 24 ? i - 24 : i;
-                const hourStr = String(hour).padStart(2, '0') + ':00';
+                const hourStr = `${String(hour).padStart(2, '0')}:00`;
                 hourlyData[hourStr] = { planned: 0, actual: 0 };
             }
 
-            // Calcular produção planejada por hora (meta dividida por 24 horas)
-            const totalPlanned = Number(selectedMachineData.planned_quantity) || 0;
-            const hourlyTarget = totalPlanned / HOURS_IN_PRODUCTION_DAY;
+            // Tentar buscar tamanho do lote da production_order correspondente
+            const partCode = selectedMachineData.product_cod || selectedMachineData.product_code;
+            let matchedOrder = null;
+            let lotSize = Number(selectedMachineData.planned_quantity) || 0;
+
+            if (partCode) {
+                try {
+                    const lotsSnapshot = await db.collection('production_orders')
+                        .where('part_code', '==', String(partCode))
+                        .get();
+
+                    if (!lotsSnapshot.empty) {
+                        const orderDocs = lotsSnapshot.docs
+                            .map(doc => ({ id: doc.id, ...doc.data() }))
+                            .sort((a, b) => {
+                                const aCreated = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt?._seconds ? a.createdAt._seconds * 1000 : 0);
+                                const bCreated = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt?._seconds ? b.createdAt._seconds * 1000 : 0);
+                                return bCreated - aCreated;
+                            });
+
+                        matchedOrder = orderDocs.find(order => {
+                            const status = (order.status || '').toLowerCase();
+                            return !['concluida', 'cancelada'].includes(status);
+                        }) || orderDocs[0];
+
+                        if (matchedOrder) {
+                            const orderLotSize = Number(matchedOrder.lot_size);
+                            if (Number.isFinite(orderLotSize) && orderLotSize > 0) {
+                                lotSize = orderLotSize;
+                            }
+                        }
+                    }
+                } catch (lotError) {
+                    console.warn('Não foi possível recuperar informações da ordem vinculada:', lotError);
+                }
+            }
+
+            const totalPlanned = lotSize > 0 ? lotSize : 0;
+            const hourlyTarget = HOURS_IN_PRODUCTION_DAY > 0 ? (totalPlanned / HOURS_IN_PRODUCTION_DAY) : 0;
 
             Object.keys(hourlyData).forEach(hour => {
                 hourlyData[hour].planned = hourlyTarget;
@@ -5303,7 +7134,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (!prodDate) {
                     return;
                 }
-                const hour = String(prodDate.getHours()).padStart(2, '0') + ':00';
+                const hour = `${String(prodDate.getHours()).padStart(2, '0')}:00`;
                 if (!hourlyData[hour]) {
                     hourlyData[hour] = { planned: hourlyTarget, actual: 0 };
                 }
@@ -5313,6 +7144,15 @@ document.addEventListener('DOMContentLoaded', function() {
             const totalExecuted = Object.values(hourlyData).reduce((sum, entry) => sum + (entry.actual || 0), 0);
             const hoursElapsed = getHoursElapsedInProductionDay(new Date());
             const expectedByNow = Math.min(totalPlanned, hoursElapsed * hourlyTarget);
+
+            if (matchedOrder) {
+                currentActiveOrder = { ...matchedOrder };
+            }
+            currentOrderProgress = {
+                executed: totalExecuted,
+                planned: totalPlanned,
+                expected: expectedByNow
+            };
 
             updateTimelineProgress(totalExecuted, totalPlanned, expectedByNow);
             renderHourlyChart(hourlyData);
@@ -5429,8 +7269,102 @@ document.addEventListener('DOMContentLoaded', function() {
             btnManualDowntime.addEventListener('click', openManualDowntimeModal);
         }
         
+        // Botão de retrabalho
+        const btnRework = document.getElementById('btn-rework');
+        if (btnRework) {
+            btnRework.addEventListener('click', openReworkModal);
+        }
+        
+        // Botão de borra
+        const btnManualBorra = document.getElementById('btn-manual-borra');
+        if (btnManualBorra) {
+            btnManualBorra.addEventListener('click', openManualBorraModal);
+        }
+        
         // Setup modals
         setupModals();
+    }
+
+    async function handleFinalizeOrderClick(event) {
+        event?.preventDefault?.();
+
+        if (!currentActiveOrder || !currentActiveOrder.id) {
+            showNotification('Nenhuma ordem ativa identificada para esta máquina.', 'warning');
+            return;
+        }
+
+        if (!selectedMachineData) {
+            alert('Selecione uma máquina antes de finalizar a ordem.');
+            return;
+        }
+
+        if (typeof window.authSystem?.checkPermissionForAction === 'function') {
+            const hasPermission = window.authSystem.checkPermissionForAction('close_production_order');
+            if (hasPermission === false) {
+                return;
+            }
+        }
+
+        const orderLabel = currentActiveOrder.order_number || currentActiveOrder.order_number_original || currentActiveOrder.id;
+        const confirmMessage = `Confirma a finalização da OP ${orderLabel || ''}? Esta ação marcará o lote como concluído.`;
+        if (!window.confirm(confirmMessage)) {
+            return;
+        }
+
+        const button = finalizeOrderBtn;
+        const originalContent = button ? button.innerHTML : '';
+
+        try {
+            if (button) {
+                button.disabled = true;
+                button.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>Finalizando...</span>`;
+                lucide.createIcons();
+            }
+
+        const currentUser = getActiveUser();
+            const progressSnapshot = {
+                executed: Number(currentOrderProgress.executed) || 0,
+                planned: Number(currentOrderProgress.planned) || 0,
+                expected: Number(currentOrderProgress.expected) || 0
+            };
+
+            const updatePayload = {
+                status: 'concluida',
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                completedBy: currentUser.username || null,
+                completedByName: currentUser.name || null,
+                last_progress: {
+                    ...progressSnapshot,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                }
+            };
+
+            await db.collection('production_orders').doc(currentActiveOrder.id).update(updatePayload);
+
+            showNotification(`OP ${orderLabel} finalizada com sucesso!`, 'success');
+
+            if (button) {
+                button.classList.add('hidden');
+            }
+
+            currentActiveOrder = { ...currentActiveOrder, status: 'concluida' };
+
+            await Promise.allSettled([
+                loadHourlyProductionChart(),
+                loadTodayStats(),
+                refreshAnalysisIfActive()
+            ]);
+        } catch (error) {
+            console.error('Erro ao finalizar ordem de produção:', error);
+            alert('Não foi possível finalizar a ordem. Tente novamente.');
+        } finally {
+            if (button) {
+                button.disabled = false;
+                button.innerHTML = originalContent;
+                lucide.createIcons();
+            }
+        }
     }
     
     function setupModals() {
@@ -5488,6 +7422,33 @@ document.addEventListener('DOMContentLoaded', function() {
         if (manualDowntimeClose) manualDowntimeClose.addEventListener('click', () => closeModal('manual-downtime-modal'));
         if (manualDowntimeCancel) manualDowntimeCancel.addEventListener('click', () => closeModal('manual-downtime-modal'));
         if (manualDowntimeForm) manualDowntimeForm.addEventListener('submit', handleManualDowntimeSubmit);
+
+        // Modal de retrabalho
+        const quickReworkClose = document.getElementById('quick-rework-close');
+        const quickReworkCancel = document.getElementById('quick-rework-cancel');
+        const quickReworkForm = document.getElementById('quick-rework-form');
+
+        if (quickReworkClose) quickReworkClose.addEventListener('click', () => closeModal('quick-rework-modal'));
+        if (quickReworkCancel) quickReworkCancel.addEventListener('click', () => closeModal('quick-rework-modal'));
+        if (quickReworkForm) quickReworkForm.addEventListener('submit', handleReworkSubmit);
+
+        // Modal de borra
+        const manualBorraClose = document.getElementById('manual-borra-close');
+        const manualBorraCancel = document.getElementById('manual-borra-cancel');
+        const manualBorraForm = document.getElementById('manual-borra-form');
+
+        if (manualBorraClose) manualBorraClose.addEventListener('click', () => closeModal('manual-borra-modal'));
+        if (manualBorraCancel) manualBorraCancel.addEventListener('click', () => closeModal('manual-borra-modal'));
+        if (manualBorraForm) manualBorraForm.addEventListener('submit', handleManualBorraSubmit);
+
+        // Modal de ajuste de quantidade
+        const adjustQuantityClose = document.getElementById('adjust-quantity-close');
+        const adjustQuantityCancel = document.getElementById('adjust-quantity-cancel');
+        const adjustQuantityForm = document.getElementById('adjust-quantity-form');
+
+        if (adjustQuantityClose) adjustQuantityClose.addEventListener('click', closeAdjustQuantityModal);
+        if (adjustQuantityCancel) adjustQuantityCancel.addEventListener('click', closeAdjustQuantityModal);
+        if (adjustQuantityForm) adjustQuantityForm.addEventListener('submit', handleAdjustQuantitySubmit);
     }
     
     // Funções para abrir/fechar modais
@@ -5507,6 +7468,15 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         document.getElementById('quick-losses-modal').classList.remove('hidden');
+    }
+    
+    function openReworkModal() {
+        currentEditContext = null;
+        if (!selectedMachineData) {
+            alert('Selecione uma máquina primeiro.');
+            return;
+        }
+        document.getElementById('quick-rework-modal').classList.remove('hidden');
     }
     
     function openManualProductionModal() {
@@ -5565,12 +7535,45 @@ document.addEventListener('DOMContentLoaded', function() {
         openModal('manual-losses-modal');
     }
 
+    function openManualBorraModal() {
+        currentEditContext = null;
+        if (!selectedMachineData) {
+            alert('Selecione uma máquina primeiro.');
+            return;
+        }
+
+        const dateInput = document.getElementById('manual-borra-date');
+        if (dateInput) {
+            dateInput.value = getProductionDateString();
+        }
+
+        const shiftSelect = document.getElementById('manual-borra-shift');
+        if (shiftSelect) {
+            shiftSelect.value = String(getCurrentShift());
+        }
+
+        const machineSelect = document.getElementById('manual-borra-machine');
+        if (machineSelect && selectedMachineData) {
+            machineSelect.value = selectedMachineData.machine;
+        }
+
+        const hourInput = document.getElementById('manual-borra-hour');
+        if (hourInput) {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            hourInput.value = `${hours}:${minutes}`;
+        }
+
+        openModal('manual-borra-modal');
+    }
+
     function closeModal(modalId) {
         document.getElementById(modalId).classList.add('hidden');
         // Limpar formulários
         const form = document.querySelector(`#${modalId} form`);
         if (form) form.reset();
-        if (['quick-production-modal', 'quick-losses-modal', 'quick-downtime-modal'].includes(modalId)) {
+        if (['quick-production-modal', 'quick-losses-modal', 'quick-downtime-modal', 'quick-rework-modal', 'manual-borra-modal'].includes(modalId)) {
             currentEditContext = null;
         }
     }
@@ -5650,11 +7653,17 @@ document.addEventListener('DOMContentLoaded', function() {
             alert('Selecione uma máquina primeiro.');
             return;
         }
+        // Preencher datas padrão
+        const today = getProductionDateString();
+        const ds = document.getElementById('manual-downtime-date-start');
+        const de = document.getElementById('manual-downtime-date-end');
+        if (ds && !ds.value) ds.value = today;
+        if (de && !de.value) de.value = today;
         openModal('manual-downtime-modal');
     }
     
     // Função para iniciar parada da máquina
-    function startMachineDowntime() {
+    async function startMachineDowntime() {
         const now = new Date();
         currentDowntimeStart = {
             machine: selectedMachineData.machine,
@@ -5664,6 +7673,26 @@ document.addEventListener('DOMContentLoaded', function() {
         };
         
         console.log('[TRACE][startMachineDowntime] parada iniciada', currentDowntimeStart);
+        
+        // Salvar parada ativa no Firebase para persistência
+        try {
+            const activeDowntimeData = {
+                machine: selectedMachineData.machine,
+                startDate: getProductionDateString(),
+                startTime: now.toTimeString().substr(0, 5),
+                startTimestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                startedBy: getActiveUser()?.name || 'Sistema',
+                isActive: true,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            
+            // Salvar na coleção active_downtimes (uma por máquina)
+            await db.collection('active_downtimes').doc(selectedMachineData.machine).set(activeDowntimeData);
+            
+            console.log('[TRACE] Parada ativa salva no Firebase:', activeDowntimeData);
+        } catch (error) {
+            console.error('Erro ao salvar parada ativa no Firebase:', error);
+        }
         
         machineStatus = 'stopped';
         updateMachineStatus();
@@ -5733,7 +7762,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        const currentUser = window.authSystem.getCurrentUser?.() || {};
+    const currentUser = getActiveUser();
         const horaInformada = hourValue && /^\d{2}:\d{2}$/.test(hourValue) ? hourValue : null;
 
         const payloadBase = {
@@ -5747,11 +7776,13 @@ document.addEventListener('DOMContentLoaded', function() {
             observacoes: observations,
             machine: selectedMachineData.machine || null,
             mp: selectedMachineData.mp || '',
+            orderId: selectedMachineData.order_id || null,
+            orderNumber: selectedMachineData.order_number || null,
             manual: true,
             horaInformada,
             dataHoraInformada: horaInformada ? `${dateValue}T${horaInformada}` : null,
             registradoPor: currentUser.username || null,
-            registradoPorNome: currentUser.name || null
+            registradoPorNome: getCurrentUserName()
         };
 
         try {
@@ -5762,6 +7793,14 @@ document.addEventListener('DOMContentLoaded', function() {
             });
 
             closeModal('manual-production-modal');
+            await populateMachineSelector();
+            
+            // Atualizar selectedMachineData com os dados mais recentes
+            if (selectedMachineData && selectedMachineData.machine && machineCardData[selectedMachineData.machine]) {
+                selectedMachineData = machineCardData[selectedMachineData.machine];
+                updateMachineInfo();
+            }
+            
             await loadHourlyProductionChart();
             await loadTodayStats();
             await loadRecentEntries(false);
@@ -5812,8 +7851,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const hasQuantity = Number.isFinite(quantityValue) && quantityValue > 0;
         const hasWeight = Number.isFinite(weightValue) && weightValue > 0;
 
+        // CORREÇÃO: Aceitar pelo menos um dos campos (quantidade OU peso)
         if (!hasQuantity && !hasWeight) {
-            alert('Informe a quantidade de peças perdidas ou o peso em borras (kg).');
+            alert('Informe pelo menos a quantidade de peças perdidas OU o peso em borras (kg). Não é necessário preencher ambos.');
             if (qtyInput && (!qtyInput.value || qtyInput.value === '')) {
                 qtyInput.focus();
             } else if (weightInput) {
@@ -5896,7 +7936,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const turno = [1, 2, 3].includes(shiftNumeric) ? shiftNumeric : getCurrentShift();
         const horaInformada = hourValue && /^\d{2}:\d{2}$/.test(hourValue) ? hourValue : null;
         const dataHoraInformada = horaInformada ? `${dateValue}T${horaInformada}` : null;
-        const currentUser = window.authSystem.getCurrentUser?.() || {};
+    const currentUser = getActiveUser();
 
         const payloadBase = {
             planId,
@@ -5910,11 +7950,13 @@ document.addEventListener('DOMContentLoaded', function() {
             observacoes: observations,
             machine: selectedMachineData.machine || null,
             mp: selectedMachineData.mp || '',
+            orderId: selectedMachineData.order_id || null,
+            orderNumber: selectedMachineData.order_number || null,
             manual: true,
             horaInformada,
             dataHoraInformada,
             registradoPor: currentUser.username || null,
-            registradoPorNome: currentUser.name || null,
+            registradoPorNome: getCurrentUserName(),
             photoUrl,
             photoStoragePath
         };
@@ -5929,6 +7971,14 @@ document.addEventListener('DOMContentLoaded', function() {
             });
 
             closeModal('manual-losses-modal');
+            await populateMachineSelector();
+            
+            // Atualizar selectedMachineData com os dados mais recentes
+            if (selectedMachineData && selectedMachineData.machine && machineCardData[selectedMachineData.machine]) {
+                selectedMachineData = machineCardData[selectedMachineData.machine];
+                updateMachineInfo();
+            }
+            
             await loadHourlyProductionChart();
             await loadTodayStats();
             await loadRecentEntries(false);
@@ -5996,7 +8046,9 @@ document.addEventListener('DOMContentLoaded', function() {
             perdas: '',
             observacoes: obs,
             machine: machineRef || null,
-            mp: mpValue
+            mp: mpValue,
+            orderId: selectedMachineData?.order_id || null,
+            orderNumber: selectedMachineData?.order_number || null
         };
         
         console.log('[TRACE][handleProductionSubmit] payloadBase prepared', payloadBase);
@@ -6021,6 +8073,14 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             closeModal('quick-production-modal');
+            await populateMachineSelector();
+            
+            // Atualizar selectedMachineData com os dados mais recentes
+            if (selectedMachineData && selectedMachineData.machine && machineCardData[selectedMachineData.machine]) {
+                selectedMachineData = machineCardData[selectedMachineData.machine];
+                updateMachineInfo();
+            }
+            
             await loadHourlyProductionChart();
             await loadTodayStats();
             await loadRecentEntries(false);
@@ -6188,6 +8248,8 @@ document.addEventListener('DOMContentLoaded', function() {
             observacoes: obs,
             machine: machineRef || null,
             mp: mpValue,
+            orderId: selectedMachineData?.order_id || null,
+            orderNumber: selectedMachineData?.order_number || null,
             photoUrl: photoUrl || null,
             photoStoragePath: photoStoragePath || null
         };
@@ -6214,6 +8276,14 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             closeModal('quick-losses-modal');
+            await populateMachineSelector();
+            
+            // Atualizar selectedMachineData com os dados mais recentes
+            if (selectedMachineData && selectedMachineData.machine && machineCardData[selectedMachineData.machine]) {
+                selectedMachineData = machineCardData[selectedMachineData.machine];
+                updateMachineInfo();
+            }
+            
             await loadTodayStats();
             await loadHourlyProductionChart();
             await loadRecentEntries(false);
@@ -6242,8 +8312,8 @@ document.addEventListener('DOMContentLoaded', function() {
             machineStatus
         });
 
-        const reason = document.getElementById('quick-downtime-reason').value;
-        const obs = (document.getElementById('quick-downtime-obs').value || '').trim();
+    const reason = document.getElementById('quick-downtime-reason').value;
+    const obs = (document.getElementById('quick-downtime-obs').value || '').trim();
         const downtimePhotoInput = document.getElementById('quick-downtime-photo');
         const downtimePhotoFile = downtimePhotoInput?.files?.[0] || null;
         
@@ -6283,27 +8353,38 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
 
-            // Calcular duração
-            const startMinutes = parseTimeToMinutes(currentDowntimeStart.date, currentDowntimeStart.startTime) || 0;
-            const endMinutes = parseTimeToMinutes(currentDowntimeStart.date, endTime) || startMinutes;
-            const durationMinutes = Math.max(1, endMinutes - startMinutes);
+            // Determinar datas de início e fim (fim = data atual de produção)
+            const startDateStr = currentDowntimeStart.date || formatDateYMD(currentDowntimeStart.startTimestamp || new Date());
+            const endDateStr = getProductionDateString();
 
-            const downtimeData = {
-                machine: currentDowntimeStart.machine,
-                date: currentDowntimeStart.date,
-                startTime: currentDowntimeStart.startTime,
-                endTime: endTime,
-                duration: durationMinutes,
-                reason: reason,
-                observations: obs,
-                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                photoUrl,
-                photoStoragePath
-            };
+            // Quebrar em segmentos por dia
+            const segments = splitDowntimeIntoDailySegments(startDateStr, currentDowntimeStart.startTime, endDateStr, endTime);
+            if (!segments.length) {
+                alert('Intervalo de parada inválido. Verifique os horários.');
+                return;
+            }
 
-            console.log('[TRACE][handleDowntimeSubmit] persistence payload', downtimeData);
-            
-            await db.collection('downtime_entries').add(downtimeData);
+            const currentUser = getActiveUser();
+
+            for (const seg of segments) {
+                const downtimeData = {
+                    machine: currentDowntimeStart.machine,
+                    date: seg.date,
+                    startTime: seg.startTime,
+                    endTime: seg.endTime,
+                    duration: seg.duration,
+                    reason: reason,
+                    observations: obs,
+                    registradoPor: currentUser.username || null,
+                    registradoPorNome: getCurrentUserName(),
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    photoUrl,
+                    photoStoragePath
+                };
+
+                console.log('[TRACE][handleDowntimeSubmit] saving segment', downtimeData);
+                await db.collection('downtime_entries').add(downtimeData);
+            }
             
             // Resetar status
             currentDowntimeStart = null;
@@ -6330,13 +8411,141 @@ document.addEventListener('DOMContentLoaded', function() {
             alert('Erro ao registrar parada. Tente novamente.');
         }
     }
+
+    async function handleManualBorraSubmit(e) {
+        e.preventDefault();
+
+        if (!window.authSystem.checkPermissionForAction('add_losses')) {
+            return;
+        }
+
+        if (!selectedMachineData) {
+            alert('Nenhuma máquina selecionada. Selecione uma máquina para registrar a borra.');
+            return;
+        }
+
+        const dateInput = document.getElementById('manual-borra-date');
+        const shiftSelect = document.getElementById('manual-borra-shift');
+        const hourInput = document.getElementById('manual-borra-hour');
+        const machineSelect = document.getElementById('manual-borra-machine');
+        const weightInput = document.getElementById('manual-borra-weight');
+        const mpTypeSelect = document.getElementById('manual-borra-mp-type');
+        const reasonInput = document.getElementById('manual-borra-reason');
+        const obsInput = document.getElementById('manual-borra-obs');
+
+        const dateValue = (dateInput?.value || '').trim();
+        const shiftRaw = shiftSelect?.value || '';
+        const hourValue = (hourInput?.value || '').trim();
+        const machineValue = machineSelect?.value || '';
+        const weightValue = parseFloat(weightInput?.value || '0');
+        const mpTypeValue = mpTypeSelect?.value || '';
+        const reasonValue = (reasonInput?.value || '').trim();
+        const observations = (obsInput?.value || '').trim();
+
+        if (!dateValue) {
+            alert('Informe a data de geração da borra.');
+            if (dateInput) dateInput.focus();
+            return;
+        }
+
+        if (!machineValue) {
+            alert('Selecione a máquina que gerou a borra.');
+            if (machineSelect) machineSelect.focus();
+            return;
+        }
+
+        if (!Number.isFinite(weightValue) || weightValue <= 0) {
+            alert('Informe o peso da borra em kg (valor deve ser maior que zero).');
+            if (weightInput) weightInput.focus();
+            return;
+        }
+
+        if (!mpTypeValue) {
+            alert('Selecione o tipo de matéria-prima da borra.');
+            if (mpTypeSelect) mpTypeSelect.focus();
+            return;
+        }
+
+        if (!reasonValue) {
+            alert('Informe o motivo da geração da borra.');
+            if (reasonInput) reasonInput.focus();
+            return;
+        }
+
+        const statusDiv = document.getElementById('manual-borra-status');
+        const submitButton = document.getElementById('manual-borra-save');
+
+        try {
+            if (statusDiv) statusDiv.textContent = 'Salvando borra...';
+            if (submitButton) {
+                submitButton.disabled = true;
+                submitButton.textContent = 'Salvando...';
+            }
+
+            const currentUser = getActiveUser();
+            const workDay = getWorkDayFromDate(dateValue, hourValue);
+            
+            // Preparar dados da borra (salvar como perda especial)
+            const borraData = {
+                data: dateValue,
+                workDay: workDay,
+                machine: machineValue,
+                refugo_kg: weightValue, // Salvar como refugo em kg
+                refugo_qty: 0, // Borra não tem peças, apenas peso
+                perdas: `BORRA - ${reasonValue}`,
+                mp: '',
+                mp_type: mpTypeValue,
+                turno: parseInt(shiftRaw, 10) || 1,
+                horaInformada: hourValue || null,
+                observacoes: observations || '',
+                tipo_lancamento: 'borra', // Identificador especial
+                planningRef: selectedMachineData.id,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                createdBy: currentUser.username || 'sistema',
+                createdByName: currentUser.name || 'Sistema'
+            };
+
+            console.log('[TRACE][handleManualBorraSubmit] prepared borra data', borraData);
+
+            // Salvar na coleção production_entries (como outras perdas)
+            const docRef = await db.collection('production_entries').add(borraData);
+            
+            console.log('[TRACE][handleManualBorraSubmit] borra saved successfully', { docId: docRef.id });
+
+            if (statusDiv) statusDiv.textContent = 'Borra registrada com sucesso!';
+            showNotification(`Borra de ${weightValue}kg registrada com sucesso!`, 'success');
+
+            // Fechar modal e atualizar dados
+            setTimeout(() => {
+                closeModal('manual-borra-modal');
+                if (typeof updateOverviewData === 'function') {
+                    updateOverviewData();
+                }
+                if (typeof refreshRecentEntries === 'function') {
+                    refreshRecentEntries();
+                }
+            }, 1500);
+
+        } catch (error) {
+            console.error('[ERROR][handleManualBorraSubmit] falha ao salvar borra', error);
+            
+            if (statusDiv) statusDiv.textContent = 'Erro ao registrar borra. Tente novamente.';
+            showNotification('Erro ao registrar borra. Verifique os dados e tente novamente.', 'error');
+        } finally {
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.textContent = 'Registrar Borra';
+            }
+        }
+    }
     
     // Função para lançamento manual de parada passada
     async function handleManualDowntimeSubmit(e) {
         e.preventDefault();
         
         console.log('[TRACE][handleManualDowntimeSubmit] triggered', { selectedMachineData });
-
+        const dateStartInput = document.getElementById('manual-downtime-date-start');
+        const dateEndInput = document.getElementById('manual-downtime-date-end');
         const startTime = document.getElementById('manual-downtime-start').value;
         const endTime = document.getElementById('manual-downtime-end').value;
         const reason = document.getElementById('manual-downtime-reason').value;
@@ -6361,19 +8570,26 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        // Validar horários
-        if (startTime >= endTime) {
-            alert('O horário de início deve ser anterior ao horário de fim.');
+        // Datas (opcionais). Se não informadas, assume a data de produção atual
+        const todayStr = getProductionDateString();
+        const dateStartStr = (dateStartInput?.value || todayStr);
+        const dateEndStr = (dateEndInput?.value || dateStartStr);
+
+        // Validar coerência temporal
+        const dtStart = new Date(`${dateStartStr}T${startTime}:00`);
+        const dtEnd = new Date(`${dateEndStr}T${endTime}:00`);
+        if (Number.isNaN(dtStart.getTime()) || Number.isNaN(dtEnd.getTime()) || dtEnd <= dtStart) {
+            alert('Intervalo de parada inválido. Verifique as datas/horas informadas.');
             return;
         }
         
         try {
-            const date = getProductionDateString();
-            
-            // Calcular duração
-            const startMinutes = parseTimeToMinutes(date, startTime) || 0;
-            const endMinutes = parseTimeToMinutes(date, endTime) || startMinutes;
-            const durationMinutes = Math.max(1, endMinutes - startMinutes);
+            // Quebrar em segmentos por dia
+            const segments = splitDowntimeIntoDailySegments(dateStartStr, startTime, dateEndStr, endTime);
+            if (!segments.length) {
+                alert('Não foi possível interpretar o período informado.');
+                return;
+            }
 
             let photoUrl = null;
             let photoStoragePath = null;
@@ -6394,22 +8610,26 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
 
-            const downtimeData = {
-                machine: selectedMachineData.machine,
-                date: date,
-                startTime: startTime,
-                endTime: endTime,
-                duration: durationMinutes,
-                reason: reason,
-                observations: obs,
-                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                photoUrl,
-                photoStoragePath
-            };
-
-            console.log('[TRACE][handleManualDowntimeSubmit] persistence payload', downtimeData);
-            
-            await db.collection('downtime_entries').add(downtimeData);
+            // Persistir cada segmento
+            const currentUser = getActiveUser();
+            for (const seg of segments) {
+                const downtimeData = {
+                    machine: selectedMachineData.machine,
+                    date: seg.date,
+                    startTime: seg.startTime,
+                    endTime: seg.endTime,
+                    duration: seg.duration,
+                    reason: reason,
+                    observations: obs,
+                    registradoPor: currentUser.username || null,
+                    registradoPorNome: getCurrentUserName(),
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    photoUrl,
+                    photoStoragePath
+                };
+                console.log('[TRACE][handleManualDowntimeSubmit] saving segment', downtimeData);
+                await db.collection('downtime_entries').add(downtimeData);
+            }
             
             closeModal('manual-downtime-modal');
             
@@ -6418,7 +8638,7 @@ document.addEventListener('DOMContentLoaded', function() {
             await loadRecentEntries(false);
             
             // Mostrar sucesso
-            showNotification('Parada manual registrada com sucesso!', 'success');
+            showNotification('Parada manual registrada com sucesso! (período possivelmente multi-dia)', 'success');
 
             console.log('[TRACE][handleManualDowntimeSubmit] success path completed');
             
@@ -6438,20 +8658,43 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const now = new Date();
             const endTime = now.toTimeString().substr(0, 5);
-            const startMinutes = parseTimeToMinutes(currentDowntimeStart.date, currentDowntimeStart.startTime) || 0;
-            const endMinutes = parseTimeToMinutes(currentDowntimeStart.date, endTime) || startMinutes;
-            const durationMinutes = Math.max(1, endMinutes - startMinutes);
 
-            const downtimeData = {
-                ...currentDowntimeStart,
-                endTime,
-                duration: durationMinutes, // FIX: persistir a duração calculada para uso na análise
-                createdAt: firebase.firestore.FieldValue.serverTimestamp()
-            };
+            const startDateStr = currentDowntimeStart.date || formatDateYMD(currentDowntimeStart.startTimestamp || now);
+            const endDateStr = formatDateYMD(now);
+
+            const segments = splitDowntimeIntoDailySegments(startDateStr, currentDowntimeStart.startTime, endDateStr, endTime);
+            console.log('[TRACE][finishDowntime] segments', segments);
+
+            if (!segments.length) {
+                // fallback simples
+                const downtimeData = {
+                    ...currentDowntimeStart,
+                    endTime,
+                    duration: 1,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                await db.collection('downtime_entries').add(downtimeData);
+            } else {
+                for (const seg of segments) {
+                    const downtimeData = {
+                        machine: currentDowntimeStart.machine,
+                        date: seg.date,
+                        startTime: seg.startTime,
+                        endTime: seg.endTime,
+                        duration: seg.duration,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+                    await db.collection('downtime_entries').add(downtimeData);
+                }
+            }
             
-            console.log('[TRACE][finishDowntime] persistence payload', downtimeData);
-
-            await db.collection('downtime_entries').add(downtimeData);
+            // Remover parada ativa do Firebase
+            try {
+                await db.collection('active_downtimes').doc(currentDowntimeStart.machine).delete();
+                console.log('[TRACE] Parada ativa removida do Firebase');
+            } catch (error) {
+                console.error('Erro ao remover parada ativa do Firebase:', error);
+            }
             
             // Resetar status
             currentDowntimeStart = null;
@@ -6471,6 +8714,109 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch (error) {
             console.error("Erro ao finalizar parada: ", error);
             alert('Erro ao finalizar parada. Tente novamente.');
+        }
+    }
+    
+    // Handler para registrar retrabalho
+    async function handleReworkSubmit(e) {
+        e.preventDefault();
+        
+        // Verificar permissão
+        if (!window.authSystem.checkPermissionForAction('add_rework')) {
+            return;
+        }
+        
+        console.log('[TRACE][handleReworkSubmit] triggered', { selectedMachineData });
+
+        if (!selectedMachineData) {
+            alert('Nenhuma máquina selecionada. Selecione uma máquina para registrar o retrabalho.');
+            return;
+        }
+
+        const qtyInput = document.getElementById('quick-rework-qty');
+        const weightInput = document.getElementById('quick-rework-weight');
+        const reasonSelect = document.getElementById('quick-rework-reason');
+        const obsInput = document.getElementById('quick-rework-obs');
+        const reworkPhotoInput = document.getElementById('quick-rework-photo');
+
+        const quantity = parseInt(qtyInput?.value, 10) || 0;
+        const weight = parseFloat(weightInput?.value) || 0;
+        const reason = reasonSelect?.value || '';
+        const observations = (obsInput?.value || '').trim();
+        const reworkPhotoFile = reworkPhotoInput?.files?.[0] || null;
+
+        if (quantity <= 0) {
+            alert('Informe uma quantidade válida de peças para retrabalho.');
+            if (qtyInput) qtyInput.focus();
+            return;
+        }
+
+        if (!reason) {
+            alert('Selecione o motivo do retrabalho.');
+            if (reasonSelect) reasonSelect.focus();
+            return;
+        }
+
+        const planId = selectedMachineData?.id || null;
+        if (!planId) {
+            alert('Não foi possível identificar o planejamento associado a esta máquina.');
+            return;
+        }
+
+        let photoUrl = null;
+        let photoStoragePath = null;
+        if (reworkPhotoFile) {
+            try {
+                const uploadResult = await uploadEvidencePhoto(reworkPhotoFile, `rework/${planId}`);
+                photoUrl = uploadResult?.url || null;
+                photoStoragePath = uploadResult?.path || null;
+            } catch (error) {
+                console.error('Erro ao enviar foto do retrabalho:', error);
+                if (error?.message === 'storage-not-configured') {
+                    alert('Não foi possível salvar a foto porque o armazenamento não está configurado.');
+                } else {
+                    alert('Erro ao enviar a foto. O registro não foi salvo.');
+                }
+                return;
+            }
+        }
+
+        const currentShift = getCurrentShift();
+        const dataReferencia = getProductionDateString();
+    const currentUser = getActiveUser();
+
+        const reworkData = {
+            planId,
+            data: dataReferencia,
+            turno: currentShift,
+            quantidade: quantity,
+            peso_kg: weight > 0 ? weight : null,
+            motivo: reason,
+            observacoes: observations,
+            machine: selectedMachineData.machine || null,
+            mp: selectedMachineData.mp || '',
+            photoUrl: photoUrl || null,
+            photoStoragePath: photoStoragePath || null,
+            registradoPor: currentUser.username || null,
+            registradoPorNome: getCurrentUserName(),
+            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        console.log('[TRACE][handleReworkSubmit] prepared rework data', reworkData);
+
+        try {
+            await db.collection('rework_entries').add(reworkData);
+
+            closeModal('quick-rework-modal');
+            await loadRecentEntries(false);
+            await refreshAnalysisIfActive();
+
+            showNotification('Retrabalho registrado com sucesso!', 'success');
+            console.log('[TRACE][handleReworkSubmit] success path completed');
+        } catch (error) {
+            console.error('Erro ao registrar retrabalho:', error);
+            alert('Erro ao registrar retrabalho. Tente novamente.');
         }
     }
     
@@ -6515,7 +8861,21 @@ document.addEventListener('DOMContentLoaded', function() {
             btnDowntime.classList.add('from-green-500', 'to-green-600', 'hover:from-green-600', 'hover:to-green-700');
             downtimeIcon.setAttribute('data-lucide', 'play-circle');
             downtimeText.textContent = 'START';
-            downtimeSubtitle.textContent = 'Retomar produção';
+            
+            // Mostrar tempo da parada atual se disponível
+            if (currentDowntimeStart) {
+                const now = new Date();
+                const startDateTime = combineDateAndTime(currentDowntimeStart.date, currentDowntimeStart.startTime);
+                if (startDateTime instanceof Date && !Number.isNaN(startDateTime.getTime())) {
+                    const elapsedHours = ((now - startDateTime) / (1000 * 60 * 60)).toFixed(1);
+                    downtimeSubtitle.textContent = `PARADA ATIVA - ${elapsedHours}h`;
+                } else {
+                    downtimeSubtitle.textContent = 'PARADA ATIVA - Retomar produção';
+                }
+            } else {
+                downtimeSubtitle.textContent = 'Retomar produção';
+            }
+            
             downtimeSubtitle.classList.remove('text-red-100');
             downtimeSubtitle.classList.add('text-green-100');
         } else {
@@ -6550,7 +8910,30 @@ document.addEventListener('DOMContentLoaded', function() {
                 const hours = Math.floor(diffSec / 3600);
                 const minutes = Math.floor((diffSec % 3600) / 60);
                 const seconds = diffSec % 60;
-                downtimeTimer.textContent = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                
+                const timeDisplay = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                downtimeTimer.textContent = timeDisplay;
+                
+                // Alertas visuais baseados na duração da parada
+                downtimeTimer.classList.remove('bg-red-300', 'bg-orange-300', 'bg-yellow-300', 'text-red-800', 'text-orange-800', 'text-yellow-800');
+                
+                if (hours >= 24) {
+                    // 24+ horas - Vermelho crítico
+                    downtimeTimer.classList.add('bg-red-300', 'text-red-800');
+                    downtimeTimer.title = `PARADA CRÍTICA: ${hours}h - Verificar urgentemente!`;
+                } else if (hours >= 8) {
+                    // 8+ horas - Laranja (turno completo)
+                    downtimeTimer.classList.add('bg-orange-300', 'text-orange-800');
+                    downtimeTimer.title = `Parada longa: ${hours}h - Verificar motivo`;
+                } else if (hours >= 2) {
+                    // 2+ horas - Amarelo
+                    downtimeTimer.classList.add('bg-yellow-300', 'text-yellow-800');
+                    downtimeTimer.title = `Parada em andamento: ${hours}h${minutes > 0 ? `${minutes}m` : ''}`;
+                } else {
+                    // < 2 horas - Padrão vermelho
+                    downtimeTimer.classList.add('bg-red-300', 'text-red-800');
+                    downtimeTimer.title = `Parada ativa: ${timeDisplay}`;
+                }
             };
             updateTimer();
             downtimeTimer.interval = setInterval(updateTimer, 1000);
@@ -6720,12 +9103,14 @@ document.addEventListener('DOMContentLoaded', function() {
         const typeConfig = {
             production: { label: 'Produção', badge: 'bg-green-100 text-green-700 border border-green-200' },
             loss: { label: 'Perda', badge: 'bg-orange-100 text-orange-700 border border-orange-200' },
-            downtime: { label: 'Parada', badge: 'bg-red-100 text-red-700 border border-red-200' }
+            downtime: { label: 'Parada', badge: 'bg-red-100 text-red-700 border border-red-200' },
+            rework: { label: 'Retrabalho', badge: 'bg-purple-100 text-purple-700 border border-purple-200' }
         };
 
         const config = typeConfig[entry.type] || { label: 'Lançamento', badge: 'bg-gray-100 text-gray-600 border border-gray-200' };
         const turnoLabel = entry.data.turno ? `Turno ${entry.data.turno}` : null;
         const timeLabel = formatEntryTimestamp(entry.timestamp);
+        const registradoPorNome = entry.data.registradoPorNome || 'Desconhecido';
         const details = [];
         const parseNumber = (value) => {
             if (typeof value === 'number') return value;
@@ -6756,6 +9141,16 @@ document.addEventListener('DOMContentLoaded', function() {
             details.push(`Período: ${start}${end}`);
             if (entry.data.reason) {
                 details.push(`Motivo: ${entry.data.reason}`);
+            }
+        } else if (entry.type === 'rework') {
+            const quantidade = parseInt(entry.data.quantidade ?? entry.data.quantity ?? 0, 10) || 0;
+            details.push(`<span class="font-semibold text-gray-800">${quantidade} peça(s)</span>`);
+            const pesoKg = parseNumber(entry.data.peso_kg ?? entry.data.weight ?? 0);
+            if (pesoKg > 0) {
+                details.push(`${pesoKg.toFixed(2)} kg`);
+            }
+            if (entry.data.motivo) {
+                details.push(`Motivo: ${entry.data.motivo}`);
             }
         }
 
@@ -6793,6 +9188,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <span class="px-2 py-1 rounded-full ${config.badge}">${config.label}</span>
                             ${turnoLabel ? `<span class="px-2 py-1 rounded-full bg-gray-100 text-gray-600 border border-gray-200">${turnoLabel}</span>` : ''}
                             ${timeLabel ? `<span>${timeLabel}</span>` : ''}
+                            <span class="px-2 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-200">👤 ${registradoPorNome}</span>
                         </div>
                         <div class="text-sm text-gray-700 space-x-2">
                             ${details.join('<span class="text-gray-300">•</span>')}
@@ -6880,6 +9276,27 @@ document.addEventListener('DOMContentLoaded', function() {
                 recentEntriesCache.set(doc.id, entry);
             });
 
+            const reworkSnapshot = await db.collection('rework_entries')
+                .where('planId', '==', planId)
+                .where('data', '==', date)
+                .get();
+
+            reworkSnapshot.forEach(doc => {
+                const data = doc.data();
+                const timestamp = data.createdAt?.toDate?.() || data.timestamp?.toDate?.() || (data.data ? new Date(`${data.data}T12:00:00`) : null);
+
+                const entry = {
+                    id: doc.id,
+                    type: 'rework',
+                    collection: 'rework_entries',
+                    data,
+                    timestamp
+                };
+
+                entries.push(entry);
+                recentEntriesCache.set(doc.id, entry);
+            });
+
             entries.sort((a, b) => {
                 const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : 0;
                 const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : 0;
@@ -6918,7 +9335,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 all: 'lançamentos',
                 production: 'lançamentos de produção',
                 downtime: 'paradas',
-                loss: 'perdas'
+                loss: 'perdas',
+                rework: 'retrabalhos'
             };
             updateRecentEntriesEmptyMessage(`Não há ${filterLabels[filter]} para exibir.`);
             setRecentEntriesState({ loading: false, empty: true });
@@ -6959,7 +9377,12 @@ document.addEventListener('DOMContentLoaded', function() {
         if (action === 'edit') {
             openEntryForEditing(entryType, entryId);
         } else if (action === 'delete') {
-            const collection = entryType === 'downtime' ? 'downtime_entries' : 'production_entries';
+            let collection = 'production_entries';
+            if (entryType === 'downtime') {
+                collection = 'downtime_entries';
+            } else if (entryType === 'rework') {
+                collection = 'rework_entries';
+            }
             showConfirmModal(entryId, collection);
         }
     }
@@ -7043,8 +9466,10 @@ document.addEventListener('DOMContentLoaded', function() {
     function setActiveMachineCard(machine) {
         if (!machineCardGrid) return;
 
-        if (activeMachineCard && activeMachineCard.isConnected) {
-            activeMachineCard.classList.remove('ring-2', 'ring-offset-2', 'ring-blue-500', 'shadow-lg');
+        // Remove seleção anterior
+        const previousSelected = machineCardGrid.querySelector('.machine-card.selected');
+        if (previousSelected) {
+            previousSelected.classList.remove('selected');
         }
 
         if (!machine) {
@@ -7052,10 +9477,18 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
+        // Adiciona seleção no novo card
         const nextCard = machineCardGrid.querySelector(`[data-machine="${machine}"]`);
         if (nextCard) {
-            nextCard.classList.add('ring-2', 'ring-offset-2', 'ring-blue-500', 'shadow-lg');
+            nextCard.classList.add('selected');
             activeMachineCard = nextCard;
+            
+            // Scroll suave para o card selecionado se necessário
+            nextCard.scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'nearest',
+                inline: 'nearest'
+            });
         } else {
             activeMachineCard = null;
         }
@@ -7179,13 +9612,24 @@ document.addEventListener('DOMContentLoaded', function() {
         machineCardGrid.innerHTML = machineOrder.map(machine => {
             const data = aggregated[machine];
             const plan = data.plan || {};
-            const plannedQty = Number(plan.planned_quantity) || 0;
-            const progressPercentRaw = plannedQty > 0 ? (data.totalProduced / plannedQty) * 100 : 0;
+            // Usar APENAS lot_size da OP (quantidade total planejada da ordem)
+            // Não use planned_quantity - esse é apenas meta diária
+            const plannedQty = Number(plan.order_lot_size) || Number(plan.lot_size) || 0;
+            
+            // Calcular produção total acumulada da OP (não apenas do dia atual)
+            const totalAccumulatedProduced = Number(plan.total_produzido) || data.totalProduced || 0;
+            const lossesKg = Number(data.totalLossesKg) || 0;
+            const pieceWeight = Number(plan.piece_weight) || 0;
+            const scrapPcs = pieceWeight > 0 ? Math.round((lossesKg * 1000) / pieceWeight) : 0;
+            const goodProduction = Math.max(0, totalAccumulatedProduced - scrapPcs); // Executado = produção boa total
+            const progressPercentRaw = plannedQty > 0 ? (goodProduction / plannedQty) * 100 : 0;
+            
+            console.log(`Card ${machine} - Lot Size: ${plan.order_lot_size}, Planned Qty: ${plan.planned_quantity}, Planejado Final: ${plannedQty}, Total Produzido: ${totalAccumulatedProduced}, Produção Boa: ${goodProduction}`);
             const normalizedProgress = Math.max(0, Math.min(progressPercentRaw, 100));
             const progressPalette = resolveProgressPalette(progressPercentRaw);
             const progressTextClass = progressPalette.textClass || 'text-slate-600';
             const progressText = `${Math.max(0, progressPercentRaw).toFixed(progressPercentRaw >= 100 ? 0 : 1)}%`;
-            const remainingQty = Math.max(0, plannedQty - data.totalProduced);
+            const remainingQty = Math.max(0, plannedQty - goodProduction); // Restante baseado na produção boa
 
             machineProgressInfo[machine] = {
                 normalizedProgress,
@@ -7210,12 +9654,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     downtimeHours = Math.max(0, (elapsedSec / 3600) - runtimeHours);
                 }
             }
-            const lossesKg = Number(data.totalLossesKg) || 0;
-            const pieceWeight = Number(plan.piece_weight) || 0;
-            const scrapPcs = pieceWeight > 0 ? Math.round((lossesKg * 1000) / pieceWeight) : 0;
             let qualityPct = 100;
             if (data.totalProduced > 0) {
-                qualityPct = Math.max(0, Math.min(100, ((data.totalProduced - scrapPcs) / data.totalProduced) * 100));
+                qualityPct = Math.max(0, Math.min(100, (goodProduction / data.totalProduced) * 100));
             } else if (lossesKg > 0) {
                 qualityPct = 0;
             }
@@ -7225,70 +9666,64 @@ document.addEventListener('DOMContentLoaded', function() {
             const shiftProduced = data.byShift[currentShiftKey] ?? data.byShift[fallbackShiftKey] ?? 0;
 
             return `
-                <div class="machine-card group relative bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-lg transition hover:-translate-y-1 cursor-pointer p-4" data-machine="${machine}">
-                    <div class="flex items-start justify-between gap-4">
-                        <div>
-                            <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Máquina</span>
-                            <p class="text-xl font-bold text-slate-900">${machine}</p>
-                            ${productLine}
-                            ${mpLine}
-                        </div>
-                        <div class="text-right">
-                            <div class="flex gap-2 justify-end text-[11px]">
-                                <span class="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700" title="Tempo efetivo rodando no turno">${runtimeHours.toFixed(1)}h rodando</span>
-                                <span class="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700" title="Tempo em paradas no turno">${downtimeHours.toFixed(1)}h paradas</span>
+                <div class="machine-card group relative bg-white rounded-lg border border-slate-200 hover:border-blue-300 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer p-3" data-machine="${machine}">
+                    <!-- Header compacto -->
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <div class="machine-identifier w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
+                                ${machine.slice(-2)}
+                            </div>
+                            <div>
+                                <h3 class="text-sm font-bold text-slate-900">${machine}</h3>
+                                <p class="text-xs text-slate-500 truncate max-w-[120px]" title="${plan.product || 'Produto não definido'}">${plan.product || 'Produto não definido'}</p>
                             </div>
                         </div>
-                    </div>
-                    <div class="mt-2 text-xs text-slate-500 flex items-center gap-1">
-                        <span>OEE turno:</span>
-                        <span class="font-semibold ${oeeColorClass}">${oeePercentText}%</span>
-                    </div>
-                    <div class="mt-3 grid grid-cols-2 gap-3 text-sm">
-                        <div>
-                            <span class="text-xs uppercase tracking-wide text-slate-500">Turno atual</span>
-                            <p class="font-semibold text-slate-700">${formatShiftLabel(currentShiftKey)}</p>
-                        </div>
                         <div class="text-right">
-                            <span class="text-xs uppercase tracking-wide text-slate-500">Prod. turno</span>
-                            <p class="font-semibold text-slate-700">${formatQty(shiftProduced)}</p>
+                            <div class="text-xs font-semibold ${oeeColorClass}">${oeePercentText}%</div>
+                            <div class="text-[10px] text-slate-400 uppercase">OEE</div>
                         </div>
                     </div>
-                    <div class="mt-3 grid grid-cols-2 gap-3 text-sm">
-                        <div>
-                            <span class="text-xs uppercase tracking-wide text-slate-500">Qualidade</span>
-                            <p class="font-semibold ${qualityColorClass}">${qualityPct.toFixed(1)}%</p>
+
+                    <!-- Indicadores principais em linha -->
+                    <div class="grid grid-cols-3 gap-2 mb-3">
+                        <div class="text-center">
+                            <div class="text-sm font-semibold text-slate-900">${formatQty(goodProduction)}</div>
+                            <div class="text-[10px] text-slate-500 uppercase">Exec. OP</div>
                         </div>
-                        <div class="text-right">
-                            <span class="text-xs uppercase tracking-wide text-slate-500">Perdas</span>
-                            <p class="font-semibold text-slate-700">${(Number(lossesKg) || 0).toFixed(2)} kg</p>
+                        <div class="text-center">
+                            <div class="text-sm font-semibold ${qualityColorClass}">${qualityPct.toFixed(0)}%</div>
+                            <div class="text-[10px] text-slate-500 uppercase">Qualidade</div>
                         </div>
-                    </div>
-                    <div class="mt-4 border-t border-slate-200 pt-3">
-                        <div class="flex items-center gap-4">
-                            <div class="relative w-20 h-20">
-                                <canvas id="progress-donut-${machine}" class="w-full h-full"></canvas>
-                                <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
-                                    <span class="text-[11px] uppercase tracking-wide text-slate-400">Executado</span>
-                                    <span class="text-sm font-semibold ${progressTextClass}">${progressText}</span>
-                                </div>
-                            </div>
-                            <div class="flex-1 text-sm space-y-2">
-                                <div class="flex items-center justify-between">
-                                    <span class="text-xs uppercase tracking-wide text-slate-500">Planejado</span>
-                                    <span class="font-semibold text-slate-700">${formatQty(plannedQty)}</span>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <span class="text-xs uppercase tracking-wide text-slate-500">Produzido</span>
-                                    <span class="font-semibold text-slate-700">${formatQty(data.totalProduced)}</span>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <span class="text-xs uppercase tracking-wide text-slate-500">Restante</span>
-                                    <span class="font-semibold text-slate-700">${formatQty(remainingQty)}</span>
-                                </div>
-                            </div>
+                        <div class="text-center">
+                            <div class="text-sm font-semibold text-slate-900">${formatQty(remainingQty)}</div>
+                            <div class="text-[10px] text-slate-500 uppercase">Faltante</div>
                         </div>
                     </div>
+
+                    <!-- Barra de progresso compacta -->
+                    <div class="mb-2">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-xs text-slate-500">OP Total (${formatQty(plannedQty)})</span>
+                            <span class="text-xs font-semibold ${progressTextClass}">${progressText}</span>
+                        </div>
+                        <div class="w-full bg-slate-100 rounded-full h-2">
+                            <div class="h-2 rounded-full transition-all duration-300 ${progressPalette.bgClass || 'bg-blue-500'}" style="width: ${normalizedProgress}%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Status compacto -->
+                    <div class="flex items-center justify-between text-xs">
+                        <div class="flex gap-1">
+                            <span class="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-[10px]" title="Tempo rodando">${runtimeHours.toFixed(1)}h</span>
+                            ${downtimeHours > 0 ? `<span class="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[10px]" title="Tempo parado">${downtimeHours.toFixed(1)}h</span>` : ''}
+                        </div>
+                        <div class="text-slate-500">
+                            <span class="font-medium">${formatShiftLabel(currentShiftKey)}</span>
+                        </div>
+                    </div>
+
+                    <!-- Indicador visual de status (máquina ativa/parada) -->
+                    <div class="absolute top-2 right-2 w-2 h-2 rounded-full ${downtimeHours > runtimeHours ? 'bg-red-400' : 'bg-green-400'}" title="${downtimeHours > runtimeHours ? 'Máquina com paradas' : 'Máquina produzindo'}"></div>
                 </div>
             `;
         }).join('');
@@ -7364,7 +9799,95 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             const today = getProductionDateString();
             const planSnapshot = await db.collection('planning').where('date', '==', today).get();
-            const plans = planSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            let plans = planSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            // Enriquecer planos com dados da OP (lot size, execução acumulada)
+            const orderCacheByPartCode = new Map();
+            const productionTotalsByOrderId = new Map();
+
+            for (const plan of plans) {
+                const partCode = String(plan.product_cod || plan.product_code || plan.part_code || '').trim();
+                let resolvedOrder = null;
+
+                if (partCode) {
+                    if (!orderCacheByPartCode.has(partCode)) {
+                        try {
+                            const ordersSnapshot = await db.collection('production_orders')
+                                .where('part_code', '==', partCode)
+                                .get();
+
+                            const orders = ordersSnapshot.docs
+                                .map(doc => ({ id: doc.id, ...doc.data() }))
+                                .sort((a, b) => {
+                                    const aTs = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt?._seconds ? a.createdAt._seconds * 1000 : 0);
+                                    const bTs = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt?._seconds ? b.createdAt._seconds * 1000 : 0);
+                                    return bTs - aTs; // mais recente primeiro
+                                });
+
+                            orderCacheByPartCode.set(partCode, orders);
+                        } catch (orderError) {
+                            console.warn('Não foi possível recuperar OPs para o código', partCode, orderError);
+                            orderCacheByPartCode.set(partCode, []);
+                        }
+                    }
+
+                    const cachedOrders = orderCacheByPartCode.get(partCode) || [];
+                    if (cachedOrders.length > 0) {
+                        resolvedOrder = cachedOrders.find(order => {
+                            const status = (order.status || '').toLowerCase();
+                            return !['concluida', 'cancelada'].includes(status);
+                        }) || cachedOrders[0];
+                    }
+                }
+
+                if (resolvedOrder) {
+                    const resolvedLotSize = Number(resolvedOrder.lot_size) || 0;
+                    plan.order_lot_size = resolvedLotSize;
+                    plan.order_id = resolvedOrder.id;
+                    plan.order_number = resolvedOrder.order_number || resolvedOrder.order_number_original || resolvedOrder.id;
+
+                    // Buscar produção acumulada da OP se ainda não calculada
+                    if (!productionTotalsByOrderId.has(resolvedOrder.id)) {
+                        try {
+                            const prodSnapshot = await db.collection('production_entries')
+                                .where('orderId', '==', resolvedOrder.id)
+                                .get();
+
+                            const totalProduced = prodSnapshot.docs.reduce((sum, doc) => {
+                                const entry = doc.data();
+                                return sum + (Number(entry.produzido || entry.quantity || 0) || 0);
+                            }, 0);
+
+                            productionTotalsByOrderId.set(resolvedOrder.id, totalProduced);
+                        } catch (prodError) {
+                            console.warn('Não foi possível recuperar lançamentos da OP', resolvedOrder.id, prodError);
+                            productionTotalsByOrderId.set(resolvedOrder.id, 0);
+                        }
+                    }
+
+                    const accumulated = productionTotalsByOrderId.get(resolvedOrder.id) || 0;
+                    const resolvedOrderTotal = Number(resolvedOrder.total_produzido || resolvedOrder.totalProduced || 0);
+                    const planAccumulated = Number(plan.total_produzido) || 0;
+                    plan.total_produzido = resolvedOrderTotal > 0
+                        ? resolvedOrderTotal
+                        : (accumulated > 0 ? accumulated : planAccumulated);
+
+                    console.log('[MachineCard][OP]', {
+                        machine: plan.machine,
+                        partCode,
+                        orderId: resolvedOrder.id,
+                        lotSize: plan.order_lot_size,
+                        accumulated: plan.total_produzido
+                    });
+                } else {
+                    // Caso não exista OP vinculada, manter total produzido local e sinalizar lot size zerado
+                    plan.order_lot_size = Number(plan.lot_size) || 0;
+                    if (!Number.isFinite(plan.total_produzido)) {
+                        plan.total_produzido = 0;
+                    }
+                    console.warn('[MachineCard][OP] Nenhuma OP encontrada para o plano', plan.id, 'partCode:', partCode);
+                }
+            }
 
             let productionEntries = [];
             let downtimeEntries = [];
@@ -7450,9 +9973,17 @@ document.addEventListener('DOMContentLoaded', function() {
             productMp.textContent = selectedMachineData.mp ? `MP: ${selectedMachineData.mp}` : 'Matéria-prima não definida';
         }
         if (shiftTarget) {
-            const currentShift = getCurrentShift();
-            const target = selectedMachineData.planned_quantity || 0;
-            shiftTarget.textContent = Math.round(target / 3); // Dividir por 3 turnos
+            // Mostrar dados da OP: executado acumulado vs quantidade total da OP
+            // Usar APENAS lot_size, não planned_quantity (meta diária)
+            const totalPlanned = selectedMachineData.order_lot_size || selectedMachineData.lot_size || 0;
+            const totalExecuted = selectedMachineData.total_produzido || 0;
+            
+            if (!totalPlanned) {
+                shiftTarget.textContent = `${totalExecuted.toLocaleString('pt-BR')} / N/A`;
+                console.warn('Lot size não encontrado para máquina selecionada');
+            } else {
+                shiftTarget.textContent = `${totalExecuted.toLocaleString('pt-BR')} / ${totalPlanned.toLocaleString('pt-BR')}`;
+            }
         }
         
         // Mostrar painel
@@ -7463,98 +9994,125 @@ document.addEventListener('DOMContentLoaded', function() {
         await loadTodayStats();
         await loadRecentEntries(false);
         
-        // Reset machine status
+        // Reset machine status (mas verificar se há parada ativa primeiro)
         machineStatus = 'running';
         updateMachineStatus();
+        
+        // Verificar se há parada ativa para esta máquina
+        await checkActiveDowntimes();
     }
     
     // Função para carregar gráfico de produção por hora
     async function loadHourlyProductionChart() {
-        if (!hourlyProductionChart || !selectedMachineData) return;
-        
+        if (!selectedMachineData || !hourlyProductionChart) return;
+
+        currentActiveOrder = null;
+        currentOrderProgress = { executed: 0, planned: 0, expected: 0 };
+
         try {
             const today = getProductionDateString();
-            
-            // Buscar dados de produção
-            const prodSnapshot = await db.collection('production_entries')
-                .where('planId', '==', selectedMachineData.id)
+            const productionSnapshot = await db.collection('production_entries')
                 .where('data', '==', today)
+                .where('planId', '==', selectedMachineData.id)
                 .get();
-            
-            const productions = prodSnapshot.docs.map(doc => doc.data());
-            
-            // Preparar dados por hora (7:00 às 6:59)
+
             const hourlyData = {};
-            for (let i = 7; i < 24; i++) {
-                const hour = `${String(i).padStart(2, '0')}:00`;
-                hourlyData[hour] = 0;
+            for (let i = 7; i < 31; i++) {
+                const hour = i >= 24 ? i - 24 : i;
+                const hourStr = `${String(hour).padStart(2, '0')}:00`;
+                hourlyData[hourStr] = { planned: 0, actual: 0 };
             }
-            for (let i = 0; i < 7; i++) {
-                const hour = `${String(i).padStart(2, '0')}:00`;
-                hourlyData[hour] = 0;
-            }
-            
-            // Agregar produção por hora
-            productions.forEach(prod => {
-                const prodDate = resolveProductionDateTime(prod);
-                if (!prodDate) return;
-                const hour = `${String(prodDate.getHours()).padStart(2, '0')}:00`;
-                if (hourlyData[hour] === undefined) {
-                    hourlyData[hour] = 0;
+
+            const partCode = selectedMachineData.product_cod || selectedMachineData.product_code;
+            let matchedOrder = null;
+            let lotSize = Number(selectedMachineData.planned_quantity) || 0;
+
+            if (partCode) {
+                try {
+                    const lotsSnapshot = await db.collection('production_orders')
+                        .where('part_code', '==', String(partCode))
+                        .get();
+
+                    if (!lotsSnapshot.empty) {
+                        const orderDocs = lotsSnapshot.docs
+                            .map(doc => ({ id: doc.id, ...doc.data() }))
+                            .sort((a, b) => {
+                                const aCreated = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt?._seconds ? a.createdAt._seconds * 1000 : 0);
+                                const bCreated = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt?._seconds ? b.createdAt._seconds * 1000 : 0);
+                                return bCreated - aCreated;
+                            });
+
+                        matchedOrder = orderDocs.find(order => {
+                            const status = (order.status || '').toLowerCase();
+                            return !['concluida', 'cancelada'].includes(status);
+                        }) || orderDocs[0];
+
+                        if (matchedOrder) {
+                            const orderLotSize = Number(matchedOrder.lot_size);
+                            if (Number.isFinite(orderLotSize) && orderLotSize > 0) {
+                                lotSize = orderLotSize;
+                            }
+                        }
+                    }
+                } catch (lotError) {
+                    console.warn('Não foi possível recuperar informações da ordem vinculada:', lotError);
                 }
-                hourlyData[hour] += prod.produzido || 0;
+            }
+
+            const totalPlanned = lotSize > 0 ? lotSize : 0;
+            const hourlyTarget = HOURS_IN_PRODUCTION_DAY > 0 ? (totalPlanned / HOURS_IN_PRODUCTION_DAY) : 0;
+
+            Object.keys(hourlyData).forEach(hour => {
+                hourlyData[hour].planned = hourlyTarget;
             });
-            
-            // Ordenar horas (7:00 primeiro, depois sequencial)
-            const sortedHours = Object.keys(hourlyData).sort((a, b) => {
-                const hourA = parseInt(a.split(':')[0]);
-                const hourB = parseInt(b.split(':')[0]);
-                if (hourA >= 7 && hourB < 7) return -1;
-                if (hourA < 7 && hourB >= 7) return 1;
-                return hourA - hourB;
+
+            productionSnapshot.forEach(doc => {
+                const data = doc.data();
+                const prodDate = resolveProductionDateTime(data);
+                if (!prodDate) {
+                    return;
+                }
+                const hour = `${String(prodDate.getHours()).padStart(2, '0')}:00`;
+                if (!hourlyData[hour]) {
+                    hourlyData[hour] = { planned: hourlyTarget, actual: 0 };
+                }
+                hourlyData[hour].actual += data.produzido || 0;
             });
-            
-            // Dados acumulados
-            let cumulativeProduced = 0;
-            const cumulativeData = sortedHours.map(hour => {
-                cumulativeProduced += hourlyData[hour];
-                return cumulativeProduced;
-            });
-            
-            // Meta acumulada (distribuída uniformemente)
-            const totalTarget = Number(selectedMachineData.planned_quantity) || 0;
-            const hourlyTarget = totalTarget / HOURS_IN_PRODUCTION_DAY;
-            let cumulativeTarget = 0;
-            const targetData = sortedHours.map(() => {
-                cumulativeTarget += hourlyTarget;
-                return cumulativeTarget;
-            });
-            
-            // Renderizar gráfico
+
+            const totalExecuted = Object.values(hourlyData).reduce((sum, entry) => sum + (entry.actual || 0), 0);
+            const hoursElapsed = getHoursElapsedInProductionDay(new Date());
+            const expectedByNow = Math.min(totalPlanned, hoursElapsed * hourlyTarget);
+
+            if (matchedOrder) {
+                currentActiveOrder = { ...matchedOrder };
+            }
+            currentOrderProgress = {
+                executed: totalExecuted,
+                planned: totalPlanned,
+                expected: expectedByNow
+            };
+
+            updateTimelineProgress(totalExecuted, totalPlanned, expectedByNow);
+
             if (hourlyChartInstance) {
                 hourlyChartInstance.destroy();
                 hourlyChartInstance = null;
             }
 
-            const hourlyActualSeries = sortedHours.map(hour => hourlyData[hour] || 0);
-            const hourlyPlannedSeries = sortedHours.map(() => hourlyTarget);
-
-            const totalExecuted = hourlyActualSeries.reduce((sum, value) => sum + value, 0);
-            const hoursElapsed = getHoursElapsedInProductionDay(new Date());
-            const expectedByNow = Math.min(totalTarget, hoursElapsed * hourlyTarget);
-
-            updateTimelineProgress(totalExecuted, totalTarget, expectedByNow);
+            const hours = Object.keys(hourlyData);
+            const plannedData = hours.map(hour => Number(hourlyData[hour].planned || 0));
+            const actualData = hours.map(hour => Number(hourlyData[hour].actual || 0));
 
             hourlyChartInstance = createHourlyProductionChart({
                 canvas: hourlyProductionChart,
-                labels: sortedHours,
-                executedPerHour: hourlyActualSeries,
-                plannedPerHour: hourlyPlannedSeries,
+                labels: hours,
+                executedPerHour: actualData,
+                plannedPerHour: plannedData,
                 highlightCurrentHour: true
             });
-            
+
         } catch (error) {
-            console.error("Erro ao carregar gráfico de produção: ", error);
+            console.error('Erro ao carregar dados do gráfico: ', error);
         }
     }
     
@@ -7704,23 +10262,31 @@ document.addEventListener('DOMContentLoaded', function() {
         const tempoTurnoMin = 480;
         
         const tempoProgramado = tempoTurnoMin;
-        const tempoProduzindo = tempoProgramado - tempoParadaMin;
+        const tempoProduzindo = Math.max(0, tempoProgramado - Math.max(0, tempoParadaMin));
         const disponibilidade = tempoProgramado > 0 ? (tempoProduzindo / tempoProgramado) : 0;
 
         const producaoTeorica = cicloReal > 0 && cavAtivas > 0 ? (tempoProduzindo * 60 / cicloReal) * cavAtivas : 0;
-        const performance = producaoTeorica > 0 ? (produzido / producaoTeorica) : 0;
+        const performance = producaoTeorica > 0 ? Math.min(1, produzido / producaoTeorica) : (produzido > 0 ? 1 : 0);
         
-        const totalProduzido = produzido + refugoPcs;
-        const qualidade = totalProduzido > 0 ? (produzido / totalProduzido) : 0;
+        const totalProduzido = Math.max(0, produzido) + Math.max(0, refugoPcs);
+        const qualidade = totalProduzido > 0 ? (Math.max(0, produzido) / totalProduzido) : (produzido > 0 ? 1 : 0);
         
         const oee = disponibilidade * performance * qualidade;
-        
-        return {
-            disponibilidade: isNaN(disponibilidade) || !isFinite(disponibilidade) ? 0 : disponibilidade,
-            performance: isNaN(performance) || !isFinite(performance) ? 0 : performance,
-            qualidade: isNaN(qualidade) || !isFinite(qualidade) ? 0 : qualidade,
-            oee: isNaN(oee) || !isFinite(oee) ? 0 : oee
+
+        const result = {
+            disponibilidade: isNaN(disponibilidade) || !isFinite(disponibilidade) ? 0 : Math.max(0, Math.min(1, disponibilidade)),
+            performance: isNaN(performance) || !isFinite(performance) ? 0 : Math.max(0, Math.min(1, performance)),
+            qualidade: isNaN(qualidade) || !isFinite(qualidade) ? 0 : Math.max(0, Math.min(1, qualidade)),
+            oee: isNaN(oee) || !isFinite(oee) ? 0 : Math.max(0, Math.min(1, oee))
         };
+
+        console.log('[TRACE][calculateShiftOEE]', {
+            inputs: { produzido, tempoParadaMin, refugoPcs, cicloReal, cavAtivas },
+            calculations: { tempoProgramado, tempoProduzindo, producaoTeorica, totalProduzido },
+            result
+        });
+
+        return result;
     }
 
     // --- FUNÇÕES PARA OEE EM TEMPO REAL ---
@@ -8837,14 +11403,14 @@ document.addEventListener('DOMContentLoaded', function() {
             
             launchMachineSelector.innerHTML = '<option value="">Selecione uma máquina...</option>';
             
-            machineList.forEach(machine => {
+            machineDatabase.forEach(machine => {
                 const option = document.createElement('option');
-                option.value = machine;
-                option.textContent = machine;
+                option.value = machine.id;
+                option.textContent = `${machine.id} - ${machine.model}`;
                 launchMachineSelector.appendChild(option);
             });
             
-            console.log('✅ Seletor de máquinas populado com', machineList.length, 'máquinas');
+            console.log('✅ Seletor de máquinas populado com', machineDatabase.length, 'máquinas');
         } else {
             console.log('❌ Elemento machine-selector não encontrado');
         }
