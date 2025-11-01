@@ -61,6 +61,21 @@
                 background: linear-gradient(90deg, #ef4444, #f87171);
                 box-shadow: 0 6px 18px rgba(239, 68, 68, 0.25);
             }
+
+            .timeline-progress.timeline-complete {
+                animation: timelineCompleteBlink 1.2s ease-in-out infinite;
+            }
+
+            @keyframes timelineCompleteBlink {
+                0%, 100% {
+                    opacity: 1;
+                    box-shadow: 0 6px 24px rgba(16, 185, 129, 0.45);
+                }
+                50% {
+                    opacity: 0.6;
+                    box-shadow: 0 4px 14px rgba(16, 185, 129, 0.25);
+                }
+            }
       
       @keyframes progressFill {
         from { width: 0%; }
@@ -106,6 +121,9 @@
                 <a href="#" class="nav-btn" data-page="planejamento">
                     <i data-lucide="clipboard-list"></i><span>Planejamento</span>
                 </a>
+                <a href="#" class="nav-btn" data-page="ordens">
+                    <i data-lucide="package-check"></i><span>Ordens</span>
+                </a>
                 <a href="#" class="nav-btn active" data-page="lancamento">
                     <i data-lucide="keyboard"></i><span>Lançamento</span>
                 </a>
@@ -140,14 +158,20 @@
                                 <input type="date" id="planning-date-selector" name="date" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm">
                             </div>
                             <div>
+                                <label for="planning-order-select" class="block text-sm font-medium text-gray-700">Ordem de Produção</label>
+                                <select id="planning-order-select" name="production_order_id" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm">
+                                    <option value="">Selecione...</option>
+                                </select>
+                                <div id="planning-order-info" class="mt-2 p-2 bg-gray-50 rounded-md text-sm font-medium text-gray-700" style="display: none;"></div>
+                            </div>
+                            <div>
                                 <label for="planning-machine" class="block text-sm font-medium text-gray-700">Máquina</label>
                                 <select id="planning-machine" name="machine" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></select>
                             </div>
                             <div>
                                 <label for="planning-product-cod" class="block text-sm font-medium text-gray-700">Código do Produto</label>
-                                <select id="planning-product-cod" name="product_cod" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm">
-                                    <option value="">Selecione...</option>
-                                </select>
+                                <input type="text" id="planning-product-cod" name="product_cod" required placeholder="Digite o código do produto" inputmode="numeric" pattern="[0-9]*" autocomplete="off" list="planning-product-cod-list" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm" readonly>
+                                <datalist id="planning-product-cod-list"></datalist>
                                 <div id="product-name-display" class="mt-2 p-2 bg-gray-50 rounded-md text-sm font-medium text-primary-blue" style="display: none;"></div>
                             </div>
                             <div>
@@ -243,6 +267,92 @@
                     </div>
                 </div>
 
+                <!-- PÁGINA: Ordens de Produção -->
+                <div id="ordens-page" class="page-content hidden space-y-6">
+                    <div class="bg-white p-6 md:p-8 rounded-lg shadow-lg border-t-4 border-accent-2">
+                        <h2 class="text-2xl font-bold mb-4 flex items-center gap-2"><i data-lucide="package-check" class="text-accent-2"></i>Registrar Ordem de Produção</h2>
+                        <form id="production-order-form" class="space-y-5 pt-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                                <div>
+                                    <label for="order-number" class="block text-sm font-medium text-gray-700">Ordem de Produção Nº</label>
+                                    <input type="text" id="order-number" name="order_number" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm" placeholder="Ex.: OP-0001">
+                                </div>
+                                <div>
+                                    <label for="order-product" class="block text-sm font-medium text-gray-700">Produto</label>
+                                    <input type="text" id="order-product" name="product" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm" placeholder="Nome do produto">
+                                </div>
+                                <div>
+                                    <label for="order-lot-size" class="block text-sm font-medium text-gray-700">Lote (unidades)</label>
+                                    <input type="number" id="order-lot-size" name="lot_size" required min="1" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm" placeholder="Ex.: 5000">
+                                </div>
+                                <div>
+                                    <label for="order-batch" class="block text-sm font-medium text-gray-700">Lote Nº</label>
+                                    <input type="text" id="order-batch" name="batch_number" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm" placeholder="Código do lote">
+                                </div>
+                                <div>
+                                    <label for="order-customer-order" class="block text-sm font-medium text-gray-700">Pedido do Cliente</label>
+                                    <input type="text" id="order-customer-order" name="customer_order" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm" placeholder="Número do pedido">
+                                </div>
+                                <div>
+                                    <label for="order-customer" class="block text-sm font-medium text-gray-700">Cliente</label>
+                                    <input type="text" id="order-customer" name="customer" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm" placeholder="Nome do cliente">
+                                </div>
+                                <div>
+                                    <label for="order-part-code" class="block text-sm font-medium text-gray-700">Código da Peça</label>
+                                    <input type="text" id="order-part-code" name="part_code" required list="order-product-code-list" inputmode="numeric" pattern="[0-9]*" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm" placeholder="Informe o código do produto">
+                                    <datalist id="order-product-code-list"></datalist>
+                                    <div id="order-product-feedback" class="mt-2 text-sm font-medium text-primary-blue" style="display: none;"></div>
+                                </div>
+                                <div>
+                                    <label for="order-machine" class="block text-sm font-medium text-gray-700">Máquina Atribuída</label>
+                                    <select id="order-machine" name="machine_id" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm">
+                                        <option value="">Selecione uma máquina</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="order-packaging-qty" class="block text-sm font-medium text-gray-700">Qtd. por Embalagem</label>
+                                    <input type="number" id="order-packaging-qty" name="packaging_qty" min="0" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm" placeholder="Ex.: 100">
+                                </div>
+                                <div>
+                                    <label for="order-internal-packaging-qty" class="block text-sm font-medium text-gray-700">Qtd. por Embalagem Interna</label>
+                                    <input type="number" id="order-internal-packaging-qty" name="internal_packaging_qty" min="0" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm" placeholder="Ex.: 10">
+                                </div>
+                                <div class="md:col-span-2 xl:col-span-3">
+                                    <label for="order-raw-material" class="block text-sm font-medium text-gray-700">Matéria-prima</label>
+                                    <input type="text" id="order-raw-material" name="raw_material" class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm" placeholder="Tipo de material">
+                                </div>
+                            </div>
+                            <button type="submit" class="w-full bg-accent-2 hover:bg-emerald-600 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2">
+                                <i data-lucide="plus-circle"></i><span>Cadastrar OP</span>
+                            </button>
+                            <div id="production-order-status-message" class="text-sm font-semibold h-5 text-center"></div>
+                        </form>
+                    </div>
+
+                    <div class="bg-white p-6 md:p-8 rounded-lg shadow-lg">
+                        <h2 class="text-2xl font-bold mb-4 flex items-center gap-2"><i data-lucide="list-ordered" class="text-gray-600"></i>Ordens Cadastradas</h2>
+                        <div class="overflow-x-auto pt-4">
+                            <table class="min-w-full divide-y divide-gray-200 border">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-3 py-2 text-left text-xs font-medium uppercase border">OP</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium uppercase border">Produto</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium uppercase border">Cliente</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium uppercase border">Código</th>
+                                        <th class="px-3 py-2 text-center text-xs font-medium uppercase border">Tamanho do Lote</th>
+                                        <th class="px-3 py-2 text-center text-xs font-medium uppercase border">Status</th>
+                                        <th class="px-3 py-2 text-center text-xs font-medium uppercase border">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="production-order-table-body" class="divide-y divide-gray-200"></tbody>
+                            </table>
+                            <div id="production-order-empty" class="text-center py-10 text-gray-500" style="display: none;">
+                                Nenhuma ordem cadastrada até o momento.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- PÁGINA: Lançamento -->
                 <div id="lancamento-page" class="page-content space-y-4 md:space-y-6">
                     <!-- Seletor de Máquina -->
@@ -267,7 +377,7 @@
                         </div>
                         <div class="mt-4 space-y-3">
                             <select id="machine-selector" class="hidden"></select>
-                            <div id="machine-card-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4"></div>
+                            <div id="machine-card-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3"></div>
                             <p id="machine-card-empty" class="hidden text-xs md:text-sm text-blue-100">Nenhuma máquina planejada para hoje.</p>
                         </div>
                     </div>
@@ -296,8 +406,8 @@
                                     </div>
                                 </div>
                                 <div class="text-right w-full sm:w-auto">
-                                    <p class="text-xs md:text-sm text-gray-500">Meta do Turno</p>
-                                    <p class="text-xl md:text-2xl font-bold text-blue-600" id="shift-target">0</p>
+                                    <p class="text-xs md:text-sm text-gray-500">Executado / Planejado OP</p>
+                                    <p class="text-xl md:text-2xl font-bold text-blue-600" id="shift-target">0 / 0</p>
                                     <p class="text-xs md:text-sm text-gray-500">peças</p>
                                 </div>
                             </div>
@@ -333,7 +443,7 @@
                                     <!-- Barra de Progresso -->
                                     <div class="relative">
                                         <div class="text-xs text-gray-600 mb-1 flex justify-between">
-                                            <span>Progresso da Meta</span>
+                                            <span>Progresso do Tamanho do Lote</span>
                                             <span id="timeline-percentage">0%</span>
                                         </div>
                                             <div class="w-full bg-gray-200 rounded-full h-4 relative overflow-hidden">
@@ -358,6 +468,11 @@
                                             Última atualização: --:--
                                         </div>
                                     </div>
+
+                                    <button id="finalize-order-btn" class="mt-3 w-full hidden bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-3 rounded-lg shadow flex items-center justify-center gap-2 text-sm transition-colors" type="button">
+                                        <i data-lucide="check-circle" class="w-4 h-4"></i>
+                                        <span>Finalizar ordem de produção</span>
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -411,18 +526,26 @@
                             </div>
                             
                             <!-- Botões de Lançamentos Manuais -->
-                            <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-                                <button id="btn-manual-production" class="w-full bg-blue-50 hover:bg-blue-100 text-blue-700 p-4 rounded-lg shadow-md border border-blue-200 flex items-center justify-center gap-3 transition-all duration-200">
-                                    <i data-lucide="history" class="w-5 h-5"></i>
-                                    <span class="font-semibold text-sm md:text-base text-center">Lançamento Manual de Produção</span>
+                            <div class="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+                                <button id="btn-manual-production" class="w-full bg-blue-50 hover:bg-blue-100 text-blue-700 p-3 rounded-lg shadow-md border border-blue-200 flex items-center justify-center gap-2 transition-all duration-200">
+                                    <i data-lucide="history" class="w-4 h-4"></i>
+                                    <span class="font-semibold text-xs md:text-sm text-center">Lançamento Manual de Produção</span>
                                 </button>
-                                <button id="btn-manual-losses" class="w-full bg-orange-50 hover:bg-orange-100 text-orange-700 p-4 rounded-lg shadow-md border border-orange-200 flex items-center justify-center gap-3 transition-all duration-200">
-                                    <i data-lucide="alert-triangle" class="w-5 h-5"></i>
-                                    <span class="font-semibold text-sm md:text-base text-center">Lançamento Manual de Perdas</span>
+                                <button id="btn-manual-losses" class="w-full bg-orange-50 hover:bg-orange-100 text-orange-700 p-3 rounded-lg shadow-md border border-orange-200 flex items-center justify-center gap-2 transition-all duration-200">
+                                    <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+                                    <span class="font-semibold text-xs md:text-sm text-center">Lançamento Manual de Perdas</span>
                                 </button>
-                                <button id="btn-manual-downtime" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 p-4 rounded-lg shadow-md border border-gray-300 flex items-center justify-center gap-3 transition-all duration-200">
-                                    <i data-lucide="clock" class="w-5 h-5"></i>
-                                    <span class="font-semibold text-sm md:text-base text-center">Lançamento Manual de Parada</span>
+                                <button id="btn-manual-downtime" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 p-3 rounded-lg shadow-md border border-gray-300 flex items-center justify-center gap-2 transition-all duration-200">
+                                    <i data-lucide="clock" class="w-4 h-4"></i>
+                                    <span class="font-semibold text-xs md:text-sm text-center">Lançamento Manual de Parada</span>
+                                </button>
+                                <button id="btn-manual-borra" class="w-full bg-yellow-50 hover:bg-yellow-100 text-yellow-700 p-3 rounded-lg shadow-md border border-yellow-200 flex items-center justify-center gap-2 transition-all duration-200">
+                                    <i data-lucide="zap" class="w-4 h-4"></i>
+                                    <span class="font-semibold text-xs md:text-sm text-center">Registrar Borra</span>
+                                </button>
+                                <button id="btn-rework" class="w-full bg-purple-50 hover:bg-purple-100 text-purple-700 p-3 rounded-lg shadow-md border border-purple-200 flex items-center justify-center gap-2 transition-all duration-200">
+                                    <i data-lucide="wrench" class="w-4 h-4"></i>
+                                    <span class="font-semibold text-xs md:text-sm text-center">Registrar Retrabalho</span>
                                 </button>
                             </div>
                         </div>
@@ -469,6 +592,12 @@
                                     </button>
                                     <button id="filter-loss-entries" class="filter-entry-btn px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded transition-all duration-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50" data-filter="loss">
                                         Perdas
+                                    </button>
+                                    <button id="filter-rework-entries" class="filter-entry-btn px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded transition-all duration-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50" data-filter="rework">
+                                        Retrabalho
+                                    </button>
+                                    <button id="filter-borra-entries" class="filter-entry-btn px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded transition-all duration-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50" data-filter="borra">
+                                        Borra
                                     </button>
                                 </div>
                                 <button id="refresh-recent-entries" class="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50">
@@ -525,6 +654,9 @@
                                 </button>
                                 <button class="analysis-tab-btn py-2 px-4 border-b-2 transition-all duration-300 whitespace-nowrap" data-view="comparative">
                                     <i data-lucide="bar-chart-3" class="w-4 h-4 mr-2 inline"></i>Comparativo
+                                </button>
+                                <button class="analysis-tab-btn py-2 px-4 border-b-2 transition-all duration-300 whitespace-nowrap" data-view="orders">
+                                    <i data-lucide="package" class="w-4 h-4 mr-2 inline"></i>Ordens
                                 </button>
                             </nav>
                         </div>
@@ -712,6 +844,12 @@
 
                         <!-- Análise de Eficiência -->
                         <div id="efficiency-view" class="analysis-view p-4 md:p-6 hidden">
+                            <!-- Botão Debug Temporário -->
+                            <div class="mb-4">
+                                <button onclick="debugEfficiencyCalculation()" class="px-4 py-2 bg-orange-600 text-white rounded-lg font-semibold hover:bg-orange-700 transition">
+                                    🔍 Debug Eficiência
+                                </button>
+                            </div>
                             <!-- Componentes OEE -->
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mb-6 md:mb-8">
                                 <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
@@ -773,7 +911,7 @@
                             </div>
 
                             <!-- Resumo de Perdas -->
-                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
+                            <div class="grid grid-cols-1 md:grid-cols-5 gap-4 md:gap-6 mb-6 md:mb-8">
                                 <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
                                     <div class="text-center">
                                         <p class="text-gray-600 text-xs md:text-sm">Total de Perdas</p>
@@ -784,6 +922,12 @@
                                     <div class="text-center">
                                         <p class="text-gray-600 text-xs md:text-sm">% sobre Produção</p>
                                         <p id="losses-percentage" class="text-2xl md:text-3xl font-bold text-orange-600">---%</p>
+                                    </div>
+                                </div>
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <div class="text-center">
+                                        <p class="text-gray-600 text-xs md:text-sm">Total Borra (kg)</p>
+                                        <p id="total-borra" class="text-2xl md:text-3xl font-bold text-yellow-600">---</p>
                                     </div>
                                 </div>
                                 <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
@@ -820,10 +964,54 @@
                                         <canvas id="losses-by-material-chart" class="w-full h-full"></canvas>
                                     </div>
                                 </div>
+                                <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                    <h3 class="text-base md:text-lg font-semibold mb-4">Análise de Borra por MP</h3>
+                                    <div class="relative" style="height: 300px;">
+                                        <canvas id="borra-by-mp-chart" class="w-full h-full"></canvas>
+                                    </div>
+                                </div>
                                 <div class="bg-white p-4 md:p-6 rounded-lg shadow-lg border lg:col-span-2">
-                                    <h3 class="text-base md:text-lg font-semibold mb-4">Tendência de Perdas</h3>
+                                    <h3 class="text-base md:text-lg font-semibold mb-4">Tendência de Perdas e Borra</h3>
                                     <div class="relative" style="height: 350px;">
                                         <canvas id="losses-trend-chart" class="w-full h-full"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Seção Específica de Borra -->
+                            <div class="mt-6 bg-white p-4 md:p-6 rounded-lg shadow-lg border">
+                                <h3 class="text-base md:text-lg font-semibold mb-4 flex items-center">
+                                    <i data-lucide="zap" class="w-5 h-5 mr-2 text-yellow-600"></i>
+                                    Detalhamento de Borras
+                                </h3>
+                                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    <div>
+                                        <h4 class="text-sm font-semibold text-gray-700 mb-3">Borra por Motivo de Geração</h4>
+                                        <div class="relative" style="height: 250px;">
+                                            <canvas id="borra-by-reason-chart" class="w-full h-full"></canvas>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h4 class="text-sm font-semibold text-gray-700 mb-3">Borra por Máquina</h4>
+                                        <div class="relative" style="height: 250px;">
+                                            <canvas id="borra-by-machine-chart" class="w-full h-full"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                                        <div>
+                                            <p class="text-xs text-yellow-700">Maior Gerador de Borra</p>
+                                            <p id="top-borra-machine" class="text-sm font-bold text-yellow-800">---</p>
+                                        </div>
+                                        <div>
+                                            <p class="text-xs text-yellow-700">Principal Motivo de Borra</p>
+                                            <p id="top-borra-reason" class="text-sm font-bold text-yellow-800">---</p>
+                                        </div>
+                                        <div>
+                                            <p class="text-xs text-yellow-700">MP com Mais Borra</p>
+                                            <p id="top-borra-mp" class="text-sm font-bold text-yellow-800">---</p>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -936,6 +1124,42 @@
                                             <!-- Será gerado dinamicamente -->
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Aba de Ordens de Produção -->
+                        <div id="orders-view" class="analysis-view p-4 md:p-6 hidden">
+                            <div class="space-y-4 md:space-y-6">
+                                <!-- Filtros para Ordens -->
+                                <div class="bg-gray-50 p-3 md:p-4 rounded-lg">
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
+                                        <div>
+                                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Filtrar por Status</label>
+                                            <select id="orders-status-filter" class="w-full border-gray-300 rounded-md p-2 text-sm">
+                                                <option value="">Todas as Ordens</option>
+                                                <option value="planejada">Planejada</option>
+                                                <option value="em_andamento">Em Andamento</option>
+                                                <option value="concluida">Concluída</option>
+                                                <option value="cancelada">Cancelada</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Filtrar por Máquina</label>
+                                            <select id="orders-machine-filter" class="w-full border-gray-300 rounded-md p-2 text-sm">
+                                                <option value="">Todas as Máquinas</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs md:text-sm font-medium text-gray-700 mb-1">Pesquisar por Número/Produto</label>
+                                            <input type="text" id="orders-search" placeholder="Digite OP ou produto..." class="w-full border-gray-300 rounded-md p-2 text-sm">
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Grid de Ordens -->
+                                <div id="orders-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+                                    <!-- Será gerado dinamicamente -->
                                 </div>
                             </div>
                         </div>
@@ -1355,7 +1579,7 @@
                     <div class="bg-orange-50 border border-orange-200 rounded-lg p-3">
                         <p class="text-sm text-orange-800">
                             <i data-lucide="info" class="w-4 h-4 inline mr-1"></i>
-                            Informe ao menos a quantidade de peças perdidas ou o peso em borras (kg). Utilize a data e o turno para registrar apontamentos retroativos.
+                            Informe pelo menos a quantidade de peças perdidas OU o peso em borras (kg). Não é necessário preencher ambos os campos. Utilize a data e o turno para registrar apontamentos retroativos.
                         </p>
                     </div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1438,6 +1662,218 @@
             </div>
         </div>
 
+    <!-- Modal de Lançamento de Borra -->
+    <div id="manual-borra-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+            <div class="flex justify-between items-center border-b pb-4 mb-6">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
+                        <i data-lucide="zap" class="w-5 h-5 text-yellow-600"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800">Registrar Borra de Produção</h3>
+                </div>
+                <button id="manual-borra-close" type="button" class="p-2 rounded-full hover:bg-gray-100">
+                    <i data-lucide="x" class="w-5 h-5 text-gray-500"></i>
+                </button>
+            </div>
+            <form id="manual-borra-form" class="space-y-4">
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                    <p class="text-sm text-yellow-800">
+                        <i data-lucide="info" class="w-4 h-4 inline mr-1"></i>
+                        Registre a borra gerada durante o processo de produção. Este material será contabilizado nas perdas.
+                    </p>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label for="manual-borra-date" class="block text-sm font-medium text-gray-700 mb-2">Data da Geração</label>
+                        <input type="date" id="manual-borra-date" name="date" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent" required>
+                    </div>
+                    <div>
+                        <label for="manual-borra-hour" class="block text-sm font-medium text-gray-700 mb-2">Horário (opcional)</label>
+                        <input type="time" id="manual-borra-hour" name="hour" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent">
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label for="manual-borra-shift" class="block text-sm font-medium text-gray-700 mb-2">Turno</label>
+                        <select id="manual-borra-shift" name="shift" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent">
+                            <option value="1">1º Turno</option>
+                            <option value="2">2º Turno</option>
+                            <option value="3">3º Turno</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="manual-borra-machine" class="block text-sm font-medium text-gray-700 mb-2">Máquina</label>
+                        <select id="manual-borra-machine" name="machine" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent" required>
+                            <option value="">Selecione...</option>
+                            <option value="MAQ-01">MAQ-01</option>
+                            <option value="MAQ-02">MAQ-02</option>
+                            <option value="MAQ-03">MAQ-03</option>
+                            <option value="MAQ-04">MAQ-04</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label for="manual-borra-weight" class="block text-sm font-medium text-gray-700 mb-2">Peso da Borra (kg) *</label>
+                    <input type="number" step="0.01" id="manual-borra-weight" name="weight" min="0.01" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent" placeholder="Peso em kg" required>
+                </div>
+                <div>
+                    <label for="manual-borra-mp-type" class="block text-sm font-medium text-gray-700 mb-2">Tipo de Matéria-Prima *</label>
+                    <select id="manual-borra-mp-type" name="mp_type" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent" required>
+                        <option value="">Selecione o tipo de MP...</option>
+                        <option value="PE-NATURAL">PE-NATURAL</option>
+                        <option value="PE-PRETO">PE-PRETO</option>
+                        <option value="PE-AZUL">PE-AZUL</option>
+                        <option value="PE-VERMELHO">PE-VERMELHO</option>
+                        <option value="PE-VERDE">PE-VERDE</option>
+                        <option value="PE-AMARELO">PE-AMARELO</option>
+                        <option value="PP-NATURAL">PP-NATURAL</option>
+                        <option value="PP-PRETO">PP-PRETO</option>
+                        <option value="PP-COLORIDO">PP-COLORIDO</option>
+                        <option value="ABS-NATURAL">ABS-NATURAL</option>
+                        <option value="ABS-PRETO">ABS-PRETO</option>
+                        <option value="ABS-COLORIDO">ABS-COLORIDO</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="manual-borra-reason" class="block text-sm font-medium text-gray-700 mb-2">Motivo da Geração *</label>
+                    <input type="text" id="manual-borra-reason" name="reason" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent" placeholder="Digite o motivo da geração da borra..." required>
+                    <div class="mt-1 text-xs text-gray-500">
+                        <i data-lucide="info" class="w-3 h-3 inline mr-1"></i>
+                        Ex: Setup inicial, Troca de cor, Ajuste de parâmetros, etc.
+                    </div>
+                </div>
+                <div>
+                    <label for="manual-borra-obs" class="block text-sm font-medium text-gray-700 mb-2">Observações</label>
+                    <textarea id="manual-borra-obs" name="observations" rows="3" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent" placeholder="Detalhes adicionais sobre a geração da borra (opcional)"></textarea>
+                </div>
+                <div class="flex gap-3 pt-4">
+                    <button type="button" id="manual-borra-cancel" class="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition">
+                        Cancelar
+                    </button>
+                    <button type="submit" id="manual-borra-save" class="flex-1 px-4 py-3 bg-yellow-600 text-white rounded-lg font-semibold hover:bg-yellow-700 transition">
+                        Registrar Borra
+                    </button>
+                </div>
+                <div id="manual-borra-status" class="text-sm font-semibold h-5 text-center mt-2"></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal de Ajuste de Quantidade da OP -->
+    <div id="adjust-quantity-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+            <div class="flex justify-between items-center border-b pb-4 mb-6">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
+                        <i data-lucide="edit-3" class="w-5 h-5 text-yellow-600"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800">Ajustar Quantidade da OP</h3>
+                </div>
+                <button id="adjust-quantity-close" type="button" class="p-2 rounded-full hover:bg-gray-100">
+                    <i data-lucide="x" class="w-5 h-5 text-gray-500"></i>
+                </button>
+            </div>
+            <form id="adjust-quantity-form" class="space-y-4">
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                    <p class="text-sm text-yellow-800">
+                        <i data-lucide="info" class="w-4 h-4 inline mr-1"></i>
+                        Ajuste a quantidade da OP conforme necessário. Use valores positivos para aumentar ou negativos para reduzir. O ajuste será registrado para controle.
+                    </p>
+                </div>
+                
+                <!-- Informações da OP -->
+                <div class="bg-gray-50 rounded-lg p-3 space-y-2">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm font-medium text-gray-600">Ordem de Produção:</span>
+                        <span id="adjust-op-number" class="text-sm font-bold text-gray-800">-</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm font-medium text-gray-600">Produto:</span>
+                        <span id="adjust-op-product" class="text-sm text-gray-800">-</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm font-medium text-gray-600">Quantidade Original:</span>
+                        <span id="adjust-op-original-qty" class="text-sm font-bold text-blue-600">-</span>
+                    </div>
+                </div>
+
+                <!-- Ajuste -->
+                <div>
+                    <label for="adjust-reduction-qty" class="block text-sm font-medium text-gray-700 mb-2">
+                        Valor do Ajuste *
+                    </label>
+                    <input type="number" 
+                           id="adjust-reduction-qty" 
+                           name="reduction_qty" 
+                           step="1"
+                           class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent" 
+                           placeholder="Ex: +100 ou -50" 
+                           required>
+                    <div class="mt-1 text-xs text-gray-500">
+                        Valor positivo para aumentar, negativo para reduzir (ex: +100, -50)
+                    </div>
+                </div>
+
+                <!-- Motivo -->
+                <div>
+                    <label for="adjust-reason" class="block text-sm font-medium text-gray-700 mb-2">
+                        Motivo do Ajuste *
+                    </label>
+                    <select id="adjust-reason" 
+                            name="reason" 
+                            class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent" 
+                            required>
+                        <option value="">Selecione o motivo...</option>
+                        <option value="AUMENTO_PEDIDO">Aumento de Pedido</option>
+                        <option value="REDUCAO_PEDIDO">Redução de Pedido</option>
+                        <option value="PERDA_QUALIDADE">Perda por Qualidade</option>
+                        <option value="RETRABALHO">Retrabalho Identificado</option>
+                        <option value="REFUGO_PROCESSO">Refugo no Processo</option>
+                        <option value="AJUSTE_SETUP">Ajuste de Setup</option>
+                        <option value="MATERIAL_DEFEITUOSO">Material Defeituoso</option>
+                        <option value="ERRO_LANCAMENTO">Erro de Lançamento Anterior</option>
+                        <option value="CORRECAO_QUANTIDADE">Correção de Quantidade</option>
+                        <option value="OUTROS">Outros</option>
+                    </select>
+                </div>
+
+                <!-- Observações -->
+                <div>
+                    <label for="adjust-observations" class="block text-sm font-medium text-gray-700 mb-2">
+                        Observações
+                    </label>
+                    <textarea id="adjust-observations" 
+                              name="observations" 
+                              rows="3" 
+                              class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent" 
+                              placeholder="Detalhes adicionais sobre o ajuste (opcional)"></textarea>
+                </div>
+
+                <!-- Visualização do Ajuste -->
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm font-medium text-blue-700">Nova Quantidade:</span>
+                        <span id="adjust-final-qty" class="text-lg font-bold text-blue-800">-</span>
+                    </div>
+                    <div class="mt-1 text-xs text-blue-600">
+                        Quantidade após aplicar o ajuste
+                    </div>
+                </div>
+
+                <div class="flex gap-3 pt-4">
+                    <button type="button" id="adjust-quantity-cancel" class="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition">
+                        Cancelar
+                    </button>
+                    <button type="submit" id="adjust-quantity-save" class="flex-1 px-4 py-3 bg-yellow-600 text-white rounded-lg font-semibold hover:bg-yellow-700 transition">
+                        Aplicar Ajuste
+                    </button>
+                </div>
+                <div id="adjust-quantity-status" class="text-sm font-semibold h-5 text-center mt-2"></div>
+            </form>
+        </div>
+    </div>
+
     <!-- Modal de Lançamento Manual de Parada Passada -->
     <div id="manual-downtime-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
         <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
@@ -1460,6 +1896,14 @@
                     </p>
                 </div>
                 <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Data de Início</label>
+                        <input type="date" id="manual-downtime-date-start" name="dateStart" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Data de Fim</label>
+                        <input type="date" id="manual-downtime-date-end" name="dateEnd" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent">
+                    </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">Horário de Início</label>
                         <input type="time" id="manual-downtime-start" name="startTime" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" required>
@@ -1552,6 +1996,91 @@
                  <button id="confirm-modal-ok-btn" class="bg-status-error hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">Excluir</button>
              </div>
          </div>
+    </div>
+
+    <!-- Modal de Retrabalho -->
+    <div id="quick-rework-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+            <div class="flex justify-between items-center border-b pb-4 mb-6">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                        <i data-lucide="wrench" class="w-5 h-5 text-purple-600"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800">Registrar Retrabalho</h3>
+                </div>
+                <button id="quick-rework-close" class="p-2 rounded-full hover:bg-gray-100">
+                    <i data-lucide="x" class="w-5 h-5 text-gray-500"></i>
+                </button>
+            </div>
+            <form id="quick-rework-form" class="space-y-4">
+                <div class="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-4">
+                    <p class="text-sm text-purple-800">
+                        <i data-lucide="info" class="w-4 h-4 inline mr-1"></i>
+                        Registre peças que necessitaram de retrabalho/reprocessamento.
+                    </p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Quantidade de Peças para Retrabalho</label>
+                    <input type="number" id="quick-rework-qty" name="quantity" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent" placeholder="Número de peças" required min="1">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Peso (kg, opcional)</label>
+                    <input type="number" step="0.01" id="quick-rework-weight" name="weight" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent" placeholder="Peso em kg">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Motivo do Retrabalho</label>
+                    <select id="quick-rework-reason" name="reason" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent" required>
+                        <option value="">Selecione o motivo...</option>
+                        <optgroup label="PROCESSO">
+                            <option value="BOLHA">BOLHA</option>
+                            <option value="CHUPAGEM">CHUPAGEM</option>
+                            <option value="CONTAMINAÇÃO">CONTAMINAÇÃO</option>
+                            <option value="DEGRADAÇÃO">DEGRADAÇÃO</option>
+                            <option value="EMPENAMENTO">EMPENAMENTO</option>
+                            <option value="FALHA">FALHA</option>
+                            <option value="FIAPO">FIAPO</option>
+                            <option value="FORA DE COR">FORA DE COR</option>
+                            <option value="INÍCIO/REÍNICIO">INÍCIO/REÍNÍCIO</option>
+                            <option value="JUNÇÃO">JUNÇÃO</option>
+                            <option value="MANCHAS">MANCHAS</option>
+                            <option value="MEDIDA FORA DO ESPECIFICADO">MEDIDA FORA DO ESPECIFICADO</option>
+                            <option value="MOÍDO">MOÍDO</option>
+                            <option value="PEÇAS PERDIDAS">PEÇAS PERDIDAS</option>
+                            <option value="QUEIMA">QUEIMA</option>
+                            <option value="REBARBA">REBARBA</option>
+                        </optgroup>
+                        <optgroup label="FERRAMENTARIA">
+                            <option value="DEFORMAÇÃO">DEFORMAÇÃO</option>
+                            <option value="GALHO PRESO">GALHO PRESO</option>
+                            <option value="MARCA D'ÁGUA">MARCA D'ÁGUA</option>
+                            <option value="MARCA EXTRATOR">MARCA EXTRATOR</option>
+                            <option value="RISCOS">RISCOS</option>
+                            <option value="SUJIDADE">SUJIDADE</option>
+                        </optgroup>
+                        <optgroup label="QUALIDADE">
+                            <option value="INSPEÇÃO DE LINHA">INSPEÇÃO DE LINHA</option>
+                        </optgroup>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Observações</label>
+                    <textarea id="quick-rework-obs" name="observations" rows="2" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent" placeholder="Detalhes do retrabalho (opcional)"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Foto (opcional)</label>
+                    <input type="file" id="quick-rework-photo" accept="image/*" capture="environment" class="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-600 hover:file:bg-purple-100">
+                    <p class="text-xs text-gray-500 mt-1">Anexe foto da peça para registrar o problema.</p>
+                </div>
+                <div class="flex gap-3 pt-4">
+                    <button type="button" id="quick-rework-cancel" class="flex-1 py-3 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="flex-1 py-3 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium">
+                        Registrar Retrabalho
+                    </button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <script src="database.js"></script>
