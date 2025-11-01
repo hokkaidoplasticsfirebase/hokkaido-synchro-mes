@@ -92,6 +92,65 @@ body {
     }
 }
 
+/* Estilos para cards de máquina */
+.machine-card {
+    transition: all 0.2s ease-in-out;
+}
+
+.machine-card:hover:not(.selected) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    border-color: #94a3b8;
+}
+
+.machine-card.selected {
+    border-color: #3b82f6 !important;
+    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+    box-shadow: 0 8px 25px rgba(59, 130, 246, 0.2);
+    transform: translateY(-2px);
+}
+
+.machine-card.selected .machine-identifier {
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.machine-card.selected::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+    border-radius: inherit;
+    z-index: -1;
+    opacity: 0.1;
+}
+
+.machine-card.selected::after {
+    content: '';
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 8px;
+    height: 8px;
+    background: #3b82f6;
+    border-radius: 50%;
+    animation: pulse-selected 2s infinite;
+}
+
+@keyframes pulse-selected {
+    0%, 100% { 
+        opacity: 1; 
+        transform: scale(1);
+    }
+    50% { 
+        opacity: 0.7; 
+        transform: scale(1.2);
+    }
+}
+
 /* ESTILOS DA SIDEBAR DE NAVEGAÇÃO */
 .nav-btn {
     display: flex;
