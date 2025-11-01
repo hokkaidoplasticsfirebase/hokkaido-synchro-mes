@@ -5337,6 +5337,10 @@ Qualidade: ${(result.filtered.qualidade * 100).toFixed(1)}%`);
 
         if (page === 'lancamento') loadLaunchPanel();
         if (page === 'planejamento') listenToPlanningChanges(getProductionDateString());
+        if (page === 'ordens') {
+            setupProductionOrdersTab();
+            listenToProductionOrders();
+        }
         if (page === 'analise') {
             console.log('📊 Abrindo aba de análise');
             
